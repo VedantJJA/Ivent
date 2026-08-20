@@ -1,13 +1,17 @@
 -- Ivent Event Check-In System Schema
 
--- Users table with is_admin flag.
+-- Users table with is_admin flag and registration number.
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  reg_number TEXT,
   is_admin BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure reg_number column exists if upgrading from older schema
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reg_number TEXT;
 
 -- Clubs table (clubs created via SQL queries or admin panel).
 CREATE TABLE IF NOT EXISTS clubs (

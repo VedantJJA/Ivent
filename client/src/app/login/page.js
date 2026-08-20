@@ -8,6 +8,7 @@ import { LogInIcon, LoaderIcon } from '@/components/Icons';
 export default function LoginPage() {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
+  const [regNumber, setRegNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState(null);
@@ -15,7 +16,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { login, register, user, loading: authLoading } = useAuth();
 
-  // Redirect if already logged in (inside useEffect)
+  // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && user) {
       router.push('/');
@@ -35,7 +36,7 @@ export default function LoginPage() {
     setError(null);
 
     if (!email || !password) {
-      setError('Please fill in all fields');
+      setError('Please fill in all required fields');
       return;
     }
 
@@ -54,7 +55,7 @@ export default function LoginPage() {
       if (mode === 'login') {
         await login(email, password);
       } else {
-        await register(email, password);
+        await register(email, password, regNumber.trim() || null);
       }
       router.push('/');
     } catch (err) {
@@ -97,7 +98,7 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address</label>
+            <label className="form-label" htmlFor="email">Email Address *</label>
             <input
               id="email"
               type="email"
@@ -110,8 +111,25 @@ export default function LoginPage() {
             />
           </div>
 
+          {mode === 'register' && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="regNumber">
+                Registration Number / Student ID
+              </label>
+              <input
+                id="regNumber"
+                type="text"
+                className="form-input"
+                placeholder="e.g. 21BCE1001 or ID number"
+                value={regNumber}
+                onChange={(e) => setRegNumber(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
+            <label className="form-label" htmlFor="password">Password *</label>
             <input
               id="password"
               type="password"
@@ -126,7 +144,7 @@ export default function LoginPage() {
 
           {mode === 'register' && (
             <div className="form-group">
-              <label className="form-label" htmlFor="confirmPassword">Confirm Password</label>
+              <label className="form-label" htmlFor="confirmPassword">Confirm Password *</label>
               <input
                 id="confirmPassword"
                 type="password"

@@ -21,23 +21,37 @@ async function logScan(registrationId, stationId, clientScanId, deviceTimestamp,
   }
 }
 
-// Atomic check-in with duplicate prevention -- single UPDATE statement
+// Atomic check-in with duplicate prevention -- supports lookup by registration UUID or user reg_number
 async function checkIn({ registrationId, totpCode, stationId, clientScanId, deviceTimestamp, io }) {
-  // Look up registration and its TOTP secret
-  const reg = await db.query(
-    'SELECT totp_secret, checked_in_at, event_id FROM registrations WHERE id = $1',
-    [registrationId]
-  );
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationId);
+
+  let reg;
+  if (isUuid) {
+    reg = await db.query(
+      'SELECT id, totp_secret, checked_in_at, event_id FROM registrations WHERE id = $1',
+      [registrationId]
+    );
+  } else {
+    // Lookup by user's registration number
+    reg = await db.query(
+      `SELECT r.id, r.totp_secret, r.checked_in_at, r.event_id
+       FROM registrations r
+       JOIN users u ON u.id = r.user_id
+       WHERE LOWER(u.reg_number) = LOWER($1)`,
+      [registrationId]
+    );
+  }
+
   if (!reg.rows[0]) {
     return { status: 'not_found' };
   }
 
-  const { totp_secret, event_id } = reg.rows[0];
+  const { id: actualRegistrationId, totp_secret, event_id } = reg.rows[0];
 
   // Verify TOTP code (current step +/- 1 for clock drift tolerance)
   const isValid = authenticator.check(totpCode, totp_secret);
   if (!isValid) {
-    await logScan(registrationId, stationId, clientScanId, deviceTimestamp, 'rejected_invalid_totp');
+    await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'rejected_invalid_totp');
     return { status: 'rejected_invalid_totp' };
   }
 
@@ -50,25 +64,25 @@ async function checkIn({ registrationId, totpCode, stationId, clientScanId, devi
          client_scan_id = $3
      WHERE id = $1 AND checked_in_at IS NULL
      RETURNING checked_in_at`,
-    [registrationId, stationId, clientScanId]
+    [actualRegistrationId, stationId, clientScanId]
   );
 
   if (rows.length === 0) {
     // Already checked in -- duplicate scan
     const existing = await db.query(
       'SELECT checked_in_at FROM registrations WHERE id = $1',
-      [registrationId]
+      [actualRegistrationId]
     );
-    await logScan(registrationId, stationId, clientScanId, deviceTimestamp, 'rejected_duplicate');
-    return { status: 'rejected_duplicate', checkedInAt: existing.rows[0].checked_in_at };
+    await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'rejected_duplicate');
+    return { status: 'rejected_duplicate', checkedInAt: existing.rows[0]?.checked_in_at };
   }
 
-  await logScan(registrationId, stationId, clientScanId, deviceTimestamp, 'accepted');
+  await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'accepted');
 
   // Push real-time update via Socket.io
   if (io) {
     io.to(`event:${event_id}`).emit('checkin', {
-      registrationId,
+      registrationId: actualRegistrationId,
       checkedInAt: rows[0].checked_in_at,
     });
   }

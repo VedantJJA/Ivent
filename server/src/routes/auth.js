@@ -22,10 +22,10 @@ async function getUserClubs(userId, email) {
   return result.rows;
 }
 
-// POST /auth/register -- create user account
+// POST /auth/register -- create user account with optional registration number
 router.post('/register', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, regNumber, reg_number } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
@@ -34,6 +34,8 @@ router.post('/register', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const cleanRegNumber = (regNumber || reg_number || '').trim() || null;
+
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'An account with this email already exists' });
@@ -42,8 +44,8 @@ router.post('/register', async (req, res) => {
     const isSystemAdmin = isAdminEmail(cleanEmail);
     const passwordHash = await argon2.hash(password);
     const result = await db.query(
-      'INSERT INTO users (email, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id, email, is_admin, created_at',
-      [cleanEmail, passwordHash, isSystemAdmin]
+      'INSERT INTO users (email, password_hash, reg_number, is_admin) VALUES ($1, $2, $3, $4) RETURNING id, email, reg_number, is_admin, created_at',
+      [cleanEmail, passwordHash, cleanRegNumber, isSystemAdmin]
     );
 
     const user = result.rows[0];
@@ -59,6 +61,7 @@ router.post('/register', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
+        reg_number: user.reg_number,
         is_admin: isSystemAdmin,
         clubs,
         created_at: user.created_at,
@@ -81,7 +84,7 @@ router.post('/login', async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
     const result = await db.query(
-      'SELECT id, email, password_hash, created_at FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, reg_number, created_at FROM users WHERE email = $1',
       [cleanEmail]
     );
     if (result.rows.length === 0) {
@@ -107,6 +110,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
+        reg_number: user.reg_number,
         is_admin: isSystemAdmin,
         clubs,
         created_at: user.created_at,
@@ -123,7 +127,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, email, created_at FROM users WHERE id = $1',
+      'SELECT id, email, reg_number, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
     if (result.rows.length === 0) {
