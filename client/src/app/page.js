@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet } from '@/lib/api';
 import EventCard from '@/components/EventCard';
 import {
-  CalendarIcon, PlusIcon, ShieldIcon, QrCodeIcon, LoaderIcon,
+  CalendarIcon, PlusIcon, ShieldIcon, LoaderIcon,
   TicketIcon, LogInIcon, UsersIcon
 } from '@/components/Icons';
 
@@ -37,8 +37,7 @@ export default function HomePage() {
           <span className="text-gradient">Reimagined</span>
         </h1>
         <p>
-          Secure TOTP-based QR check-in with real-time dashboards,
-          offline scanning support, and concurrency-safe registration.
+          Discover, register, and check in to campus and community events.
         </p>
         <div className="hero-actions">
           {user ? (
@@ -103,7 +102,7 @@ export default function HomePage() {
               <>
                 <div className="page-header">
                   <h1>Upcoming Events</h1>
-                  <p>Browse and register for upcoming events. No account needed to look around.</p>
+                  <p>Browse and register for upcoming events.</p>
                 </div>
                 <div className="event-grid">
                   {upcomingEvents.map((event, i) => (
@@ -128,38 +127,6 @@ export default function HomePage() {
           </>
         )}
       </div>
-
-      <section className="page-container">
-        <div className="dashboard-grid" style={{ marginTop: 'var(--space-xl)' }}>
-          <div className="dashboard-stat">
-            <div style={{ marginBottom: 'var(--space-sm)' }}>
-              <ShieldIcon size={32} color="var(--color-primary-400)" />
-            </div>
-            <div className="dashboard-stat-label">Concurrency-Safe</div>
-            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-              Atomic registration prevents overselling
-            </p>
-          </div>
-          <div className="dashboard-stat">
-            <div style={{ marginBottom: 'var(--space-sm)' }}>
-              <QrCodeIcon size={32} color="var(--color-primary-400)" />
-            </div>
-            <div className="dashboard-stat-label">TOTP QR Codes</div>
-            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-              Rotating codes prevent screenshot sharing
-            </p>
-          </div>
-          <div className="dashboard-stat">
-            <div style={{ marginBottom: 'var(--space-sm)' }}>
-              <CalendarIcon size={32} color="var(--color-primary-400)" />
-            </div>
-            <div className="dashboard-stat-label">Real-Time Dashboard</div>
-            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-              Live check-in tracking via Socket.io
-            </p>
-          </div>
-        </div>
-      </section>
     </>
   );
 }

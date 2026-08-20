@@ -512,18 +512,9 @@ export default function ScanPage() {
         </button>
       </div>
 
-      {mode === 'offline' && (
-        <div className="alert alert-warning" style={{ fontSize: '0.85rem' }}>
-          <strong>Offline Mode Active:</strong> Scans are checked locally for duplicates and stored in IndexedDB. Click <strong>Sync Now</strong> when internet is restored to submit to the server.
-        </div>
-      )}
-
       {error && (
-        <div className="alert alert-error" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div>{error}</div>
-          <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-            Tip: You can use the <strong>Manual Entry</strong> tab to check in attendees with their Email or Registration Number.
-          </div>
+        <div className="alert alert-error">
+          {error}
         </div>
       )}
 

@@ -233,7 +233,6 @@ export default function AdminPage() {
                     onChange={(e) => setOrganizerEmail(e.target.value)}
                     required
                   />
-                  <span className="form-hint">Note: Admins cannot be added to clubs</span>
                 </div>
 
                 <button
@@ -463,28 +462,6 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          {/* SQL Queries Reference Card */}
-          <div className="card" style={{ marginTop: 'var(--space-xl)' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 'var(--space-sm)' }}>
-              Direct SQL Queries Reference
-            </h3>
-            <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: 'var(--space-md)' }}>
-              Clubs and organizer permissions can also be manipulated directly in PostgreSQL using SQL queries:
-            </p>
-            <pre style={{ background: 'var(--color-bg-primary)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', overflowX: 'auto' }}>
-{`-- 1. Create a Club:
-INSERT INTO clubs (name, description) VALUES ('Robotics Club', 'Hardware and Robotics');
-
--- 2. Link a user to a Club as an Organizer:
-INSERT INTO club_members (club_id, user_id)
-SELECT c.id, u.id FROM clubs c, users u
-WHERE c.name = 'Robotics Club' AND u.email = 'target_user@example.com';
-
--- 3. Delete an Event:
-DELETE FROM events WHERE id = 'event-uuid-here';`}
-            </pre>
           </div>
         </>
       )}

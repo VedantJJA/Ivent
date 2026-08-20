@@ -245,13 +245,6 @@ export default function MyTicketPage() {
         <div style={{ marginTop: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
           Ticket ID: {regId}
         </div>
-
-        <div style={{ marginTop: 'var(--space-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-sm)' }}>
-          <ShieldIcon size={16} color="var(--color-primary-400)" />
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Dynamic TOTP rotates every 30s (anti-counterfeit)
-          </span>
-        </div>
       </div>
     </div>
   );
