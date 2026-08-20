@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CalendarIcon, UsersIcon, MapPinIcon } from '@/components/Icons';
+import { CalendarIcon, UsersIcon, MapPinIcon, ShieldIcon } from '@/components/Icons';
 
 export default function EventCard({ event }) {
   const eventDate = new Date(event.event_date);
@@ -37,16 +37,21 @@ export default function EventCard({ event }) {
             {eventDate.getDate()}
           </span>
         </div>
-        <div className="event-card-status">
-          {isPast ? (
-            <span className="badge badge-muted">Past</span>
-          ) : isFull ? (
-            <span className="badge badge-error">Full</span>
-          ) : spotsLeft <= 10 ? (
-            <span className="badge badge-warning">{spotsLeft} spots left</span>
-          ) : (
-            <span className="badge badge-success">Open</span>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {event.club_name && (
+            <span className="badge badge-primary">{event.club_name}</span>
           )}
+          <div className="event-card-status">
+            {isPast ? (
+              <span className="badge badge-muted">Past</span>
+            ) : isFull ? (
+              <span className="badge badge-error">Full</span>
+            ) : spotsLeft <= 10 ? (
+              <span className="badge badge-warning">{spotsLeft} spots left</span>
+            ) : (
+              <span className="badge badge-success">Open</span>
+            )}
+          </div>
         </div>
       </div>
 

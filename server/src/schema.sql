@@ -1,14 +1,35 @@
 -- Ivent Event Check-In System Schema
--- Identity only. No role column -- role is per-event.
+
+-- Users table with is_admin flag.
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  is_admin BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Clubs table (clubs created via SQL queries or admin panel).
+CREATE TABLE IF NOT EXISTS clubs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Club organizers / members (admins link users to clubs).
+CREATE TABLE IF NOT EXISTS club_members (
+  club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (club_id, user_id)
+);
+
+-- Events table linked to a club.
 CREATE TABLE IF NOT EXISTS events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id UUID REFERENCES clubs(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   description TEXT,
   location TEXT,
@@ -19,7 +40,7 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Per-event permissions. Only source of truth for who can organize/scan/manage what.
+-- Per-event permissions.
 CREATE TABLE IF NOT EXISTS event_organizers (
   event_id UUID REFERENCES events(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,

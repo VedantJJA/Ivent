@@ -1,8 +1,10 @@
+const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config(); // also fallback to root .env if present
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:1234@localhost:5432/ivent',
 });
 
 pool.on('error', (err) => {

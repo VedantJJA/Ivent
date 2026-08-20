@@ -2,12 +2,17 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { CalendarIcon, PlusIcon, LogInIcon, LogOutIcon, TicketIcon, MenuIcon, XIcon } from '@/components/Icons';
+import {
+  CalendarIcon, PlusIcon, LogInIcon, LogOutIcon, TicketIcon,
+  MenuIcon, XIcon, ShieldIcon
+} from '@/components/Icons';
 import { useState } from 'react';
 
 export default function Navbar() {
   const { user, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const isOrganizerOrAdmin = user?.is_admin || (user?.clubs && user.clubs.length > 0);
 
   return (
     <nav className="navbar">
@@ -33,14 +38,22 @@ export default function Navbar() {
 
           {!loading && user && (
             <>
-              <Link href="/events/create" className="navbar-link" onClick={() => setMobileOpen(false)}>
-                <PlusIcon size={18} />
-                <span>Create Event</span>
-              </Link>
+              {isOrganizerOrAdmin && (
+                <Link href="/events/create" className="navbar-link" onClick={() => setMobileOpen(false)}>
+                  <PlusIcon size={18} />
+                  <span>Create Event</span>
+                </Link>
+              )}
               <Link href="/my-registrations" className="navbar-link" onClick={() => setMobileOpen(false)}>
                 <TicketIcon size={18} />
                 <span>My Tickets</span>
               </Link>
+              {user.is_admin && (
+                <Link href="/admin" className="navbar-link" onClick={() => setMobileOpen(false)}>
+                  <ShieldIcon size={18} color="var(--color-primary-400)" />
+                  <span>Admin Panel</span>
+                </Link>
+              )}
             </>
           )}
 
@@ -50,7 +63,16 @@ export default function Navbar() {
             <>
               {user ? (
                 <div className="navbar-user">
-                  <span className="navbar-email">{user.email}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="navbar-email">{user.email}</span>
+                    {user.is_admin ? (
+                      <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>Admin</span>
+                    ) : user.clubs && user.clubs.length > 0 ? (
+                      <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>
+                        {user.clubs[0].name}
+                      </span>
+                    ) : null}
+                  </div>
                   <button className="btn btn-ghost btn-sm" onClick={() => { logout(); setMobileOpen(false); }}>
                     <LogOutIcon size={18} />
                     <span>Sign Out</span>

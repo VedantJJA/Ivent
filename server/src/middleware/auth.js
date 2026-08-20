@@ -44,7 +44,22 @@ function requireAuth(req, res, next) {
   }
 }
 
-// Organizer check -- must be called after requireAuth
+// Admin check -- requires is_admin = true
+async function requireAdmin(req, res, next) {
+  try {
+    const result = await db.query('SELECT is_admin FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0 || !result.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.user.is_admin = true;
+    next();
+  } catch (err) {
+    console.error('Admin check error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
+// Organizer check -- allows admin, direct event organizer, or any organizer in the event's club
 async function requireOrganizer(req, res, next) {
   const eventId = req.params.id || req.params.eventId;
   if (!eventId) {
@@ -52,11 +67,16 @@ async function requireOrganizer(req, res, next) {
   }
   try {
     const result = await db.query(
-      'SELECT 1 FROM event_organizers WHERE event_id = $1 AND user_id = $2',
+      `SELECT 1 
+       FROM events e
+       LEFT JOIN event_organizers eo ON eo.event_id = e.id AND eo.user_id = $2
+       LEFT JOIN club_members cm ON cm.club_id = e.club_id AND cm.user_id = $2
+       JOIN users u ON u.id = $2
+       WHERE e.id = $1 AND (u.is_admin = TRUE OR eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL)`,
       [eventId, req.user.id]
     );
     if (result.rows.length === 0) {
-      return res.status(403).json({ error: 'Organizer access required for this event' });
+      return res.status(403).json({ error: 'Organizer access required for this event or club' });
     }
     next();
   } catch (err) {
@@ -65,4 +85,4 @@ async function requireOrganizer(req, res, next) {
   }
 }
 
-module.exports = { optionalAuth, requireAuth, requireOrganizer };
+module.exports = { optionalAuth, requireAuth, requireAdmin, requireOrganizer };

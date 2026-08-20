@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const eventRoutes = require('./routes/events');
 const registrationRoutes = require('./routes/registrations');
 const checkinRoutes = require('./routes/checkin');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +33,7 @@ app.use(express.json());
 // Routes
 app.use('/auth', authRoutes);
 app.use('/events', eventRoutes);
+app.use('/admin', adminRoutes);
 app.use('/', registrationRoutes);
 app.use('/events', checkinRoutes);
 

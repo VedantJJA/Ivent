@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { LogInIcon, LoaderIcon } from '@/components/Icons';
@@ -13,12 +13,21 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { login, register, user } = useAuth();
+  const { login, register, user, loading: authLoading } = useAuth();
 
-  // Redirect if already logged in
-  if (user) {
-    router.push('/');
-    return null;
+  // Redirect if already logged in (inside useEffect)
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  if (authLoading || user) {
+    return (
+      <div className="loading-container">
+        <LoaderIcon size={24} />
+      </div>
+    );
   }
 
   const handleSubmit = async (e) => {
@@ -63,7 +72,7 @@ export default function LoginPage() {
           <p>
             {mode === 'login'
               ? 'Sign in to register for events and manage check-ins'
-              : 'Create your account to get started'}
+              : 'Create your attendee account to get started'}
           </p>
         </div>
 
