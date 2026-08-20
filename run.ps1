@@ -1,10 +1,10 @@
 # Ivent - Setup and Run Script
 # Usage: .\run.ps1 [command]
-# Commands: setup, server, client, dev, db-init
+# Commands: setup, server, client, dev, db-init, build, proof
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("setup", "server", "client", "dev", "db-init")]
+    [ValidateSet("setup", "server", "client", "dev", "db-init", "build", "proof")]
     [string]$Command = "dev"
 )
 
@@ -41,6 +41,27 @@ function Start-Client {
     Pop-Location
 }
 
+function Build-Client {
+    Write-Host "`nBuilding Next.js client..." -ForegroundColor Cyan
+    Push-Location $ClientDir
+    npm run build
+    Pop-Location
+}
+
+function Run-Proof {
+    Write-Host "`nRunning Concurrency Proof Script..." -ForegroundColor Cyan
+    Push-Location $ServerDir
+    npm run proof
+    Pop-Location
+}
+
+function Initialize-Database {
+    Write-Host "`nInitializing database schema..." -ForegroundColor Cyan
+    Push-Location $ServerDir
+    node src/db-init.js
+    Pop-Location
+}
+
 function Start-Dev {
     Write-Host "`nStarting Ivent (server + client)..." -ForegroundColor Cyan
     Write-Host "Server will run on http://localhost:3001" -ForegroundColor Yellow
@@ -50,15 +71,22 @@ function Start-Dev {
     $serverJob = Start-Job -ScriptBlock {
         param($dir)
         Set-Location $dir
-        npm run dev 2>&1
+        node src/index.js 2>&1
     } -ArgumentList $ServerDir
 
     # Give server a moment to start
     Start-Sleep -Seconds 2
 
-    # Start client in foreground
+    # Check if server job is running
+    if ($serverJob.State -ne "Running") {
+        Write-Host "[Error] Server failed to start. Logs:" -ForegroundColor Red
+        Receive-Job $serverJob
+        Remove-Job $serverJob -ErrorAction SilentlyContinue
+        return
+    }
+
     Write-Host "[Server] Running in background (Job ID: $($serverJob.Id))" -ForegroundColor DarkGray
-    Write-Host "[Client] Starting in foreground...`n" -ForegroundColor DarkGray
+    Write-Host "[Client] Starting Next.js in foreground...`n" -ForegroundColor DarkGray
 
     Push-Location $ClientDir
     try {
@@ -71,25 +99,17 @@ function Start-Dev {
     }
 }
 
-function Initialize-Database {
-    Write-Host "`nInitializing database schema..." -ForegroundColor Cyan
-    Push-Location $ServerDir
-    node src/db-init.js
-    Pop-Location
-}
-
 switch ($Command) {
     "setup" {
         Install-Dependencies
         Write-Host "`nSetup complete. Next steps:" -ForegroundColor Green
-        Write-Host "  1. Make sure PostgreSQL is running" -ForegroundColor White
-        Write-Host "  2. Create a database: createdb ivent" -ForegroundColor White
-        Write-Host "  3. Edit server\.env with your DB credentials" -ForegroundColor White
-        Write-Host "  4. Run: .\run.ps1 db-init" -ForegroundColor White
-        Write-Host "  5. Run: .\run.ps1 dev" -ForegroundColor White
+        Write-Host "  1. Run: .\run.ps1 db-init" -ForegroundColor White
+        Write-Host "  2. Run: .\run.ps1 dev" -ForegroundColor White
     }
     "server" { Start-Server }
     "client" { Start-Client }
+    "build" { Build-Client }
+    "proof" { Run-Proof }
     "dev" { Start-Dev }
     "db-init" { Initialize-Database }
 }
