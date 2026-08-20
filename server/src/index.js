@@ -9,25 +9,41 @@ const eventRoutes = require('./routes/events');
 const registrationRoutes = require('./routes/registrations');
 const checkinRoutes = require('./routes/checkin');
 const adminRoutes = require('./routes/admin');
+const { initDatabase } = require('./db-init');
 
 const app = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST'],
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server or curl/mobile
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(o => origin.startsWith(o) || o === '*')) {
+      return callback(null, true);
+    }
+    // Allow any .onrender.com subdomain for Render preview / production instances
+    if (origin.endsWith('.onrender.com') || origin.includes('localhost')) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Permissive in testing
   },
+  credentials: true,
+};
+
+const io = new Server(server, {
+  cors: corsOptions,
 });
 
 // Make io accessible to route handlers
 app.set('io', io);
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
@@ -40,6 +56,11 @@ app.use('/events', checkinRoutes);
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Root endpoint for status
+app.get('/', (req, res) => {
+  res.json({ service: 'Ivent API Server', status: 'healthy', version: '1.0.0' });
 });
 
 // Socket.io connection handling
@@ -61,8 +82,19 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Ivent server running on port ${PORT}`);
-});
+
+// Initialize database schema and start server
+initDatabase()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Ivent server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database on startup, starting server anyway:', err.message);
+    server.listen(PORT, () => {
+      console.log(`Ivent server running on port ${PORT}`);
+    });
+  });
 
 module.exports = { app, server, io };

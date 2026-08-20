@@ -1,0 +1,10 @@
+{
+  "name": "ivent-root",
+  "version": "1.0.0",
+  "description": "Ivent Event Check-In System",
+  "scripts": {
+    "dev": "node -e \"console.log('Use .\\\\run.ps1 dev or npm run dev in server and client dirs')\"",
+    "build": "npm --prefix client run build",
+    "db:init": "npm --prefix server run db:init"
+  }
+}
