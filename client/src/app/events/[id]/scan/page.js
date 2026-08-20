@@ -30,6 +30,32 @@ export default function ScanPage() {
     }
   }, [authLoading, user, router]);
 
+  // Load existing offline queue from IndexedDB on startup
+  useEffect(() => {
+    async function loadIndexedDB() {
+      try {
+        if (typeof window !== 'undefined' && 'indexedDB' in window) {
+          const { openDB } = await import('idb');
+          const db = await openDB('ivent-scanner', 1, {
+            upgrade(db) {
+              if (!db.objectStoreNames.contains('scan_outbox')) {
+                const store = db.createObjectStore('scan_outbox', { keyPath: 'clientScanId' });
+                store.createIndex('syncStatus', 'syncStatus');
+              }
+            },
+          });
+          const allScans = await db.getAll('scan_outbox');
+          if (allScans && allScans.length > 0) {
+            setOfflineQueue(allScans);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading IndexedDB:', err);
+      }
+    }
+    loadIndexedDB();
+  }, []);
+
   // Initialize QR scanner
   useEffect(() => {
     let scanner;
@@ -38,7 +64,7 @@ export default function ScanPage() {
       html5QrRef.current = scanner;
       setScannerReady(true);
     }).catch((err) => {
-      setError('Failed to load QR scanner library');
+      setError('Failed to load camera QR scanner module');
     });
 
     return () => {
@@ -64,10 +90,10 @@ export default function ScanPage() {
         (decodedText) => {
           handleScan(decodedText);
         },
-        () => {} // Ignore scan failures (partial reads)
+        () => {} // Ignore scan partial frames
       );
     } catch (err) {
-      setError('Could not access camera. Please allow camera permissions.');
+      setError('Could not access camera. Please enable camera permissions.');
       setScanning(false);
     }
   }, [scanning]);
@@ -77,7 +103,7 @@ export default function ScanPage() {
     try {
       await html5QrRef.current.stop();
     } catch {
-      // Scanner may not be running
+      // Scanner was not active
     }
     setScanning(false);
   }, []);
@@ -88,7 +114,7 @@ export default function ScanPage() {
     if (!match) {
       setScanResult({
         status: 'error',
-        message: 'Invalid QR code format',
+        message: 'Invalid QR code format. Please scan a valid Ivent ticket.',
       });
       return;
     }
@@ -117,7 +143,7 @@ export default function ScanPage() {
         });
       }
     } else {
-      // Offline mode: queue the scan
+      // Offline mode: queue the scan locally
       const scan = {
         registrationId,
         totpCode,
@@ -126,28 +152,22 @@ export default function ScanPage() {
         deviceTimestamp,
         syncStatus: 'pending',
       };
+
       setOfflineQueue(prev => [...prev, scan]);
       setScanResult({
         status: 'queued',
-        message: 'Scan queued for sync when back online',
+        message: `Offline Scan Queued (${totpCode}). Timestamp: ${new Date(deviceTimestamp).toLocaleTimeString()}`,
       });
 
-      // Try to store in IndexedDB
+      // Save to IndexedDB
       try {
         if (typeof window !== 'undefined' && 'indexedDB' in window) {
           const { openDB } = await import('idb');
-          const db = await openDB('ivent-scanner', 1, {
-            upgrade(db) {
-              if (!db.objectStoreNames.contains('scan_outbox')) {
-                const store = db.createObjectStore('scan_outbox', { keyPath: 'clientScanId' });
-                store.createIndex('syncStatus', 'syncStatus');
-              }
-            },
-          });
+          const db = await openDB('ivent-scanner', 1);
           await db.put('scan_outbox', scan);
         }
-      } catch {
-        // IndexedDB may not be available
+      } catch (err) {
+        console.error('IndexedDB save error:', err);
       }
     }
   };
@@ -161,21 +181,37 @@ export default function ScanPage() {
         setSyncing(false);
         return;
       }
+
       const result = await apiPost(`/events/${id}/checkin/sync-batch`, { scans: pendingScans });
-      setOfflineQueue(prev =>
-        prev.map(scan => {
-          const synced = result.results.find(r => r.clientScanId === scan.clientScanId);
-          return synced ? { ...scan, syncStatus: 'synced', result: synced.status } : scan;
-        })
-      );
+
+      // Update in-memory state
+      const updatedQueue = offlineQueue.map(scan => {
+        const synced = result.results.find(r => r.clientScanId === scan.clientScanId);
+        return synced ? { ...scan, syncStatus: 'synced', result: synced.status } : scan;
+      });
+      setOfflineQueue(updatedQueue);
+
+      // Update IndexedDB
+      try {
+        if (typeof window !== 'undefined' && 'indexedDB' in window) {
+          const { openDB } = await import('idb');
+          const db = await openDB('ivent-scanner', 1);
+          for (const scan of updatedQueue) {
+            await db.put('scan_outbox', scan);
+          }
+        }
+      } catch (err) {
+        console.error('IndexedDB update error:', err);
+      }
+
       setScanResult({
         status: 'sync-complete',
-        message: `Synced ${pendingScans.length} scans`,
+        message: `Batch sync complete: ${pendingScans.length} offline scans recorded on server`,
       });
     } catch (err) {
       setScanResult({
         status: 'error',
-        message: `Sync failed: ${err.message}`,
+        message: `Batch sync failed: ${err.message}`,
       });
     } finally {
       setSyncing(false);
@@ -203,14 +239,16 @@ export default function ScanPage() {
     );
   }
 
+  const pendingCount = offlineQueue.filter(s => s.syncStatus === 'pending').length;
+
   return (
     <div className="scanner-container">
       <div className="page-header">
         <h1>
           <ScanIcon size={28} color="var(--color-primary-400)" />
-          {' '}QR Scanner
+          {' '}QR Check-In Scanner
         </h1>
-        <p>Scan attendee QR codes for check-in</p>
+        <p>Scan attendee QR codes to check them into this event</p>
       </div>
 
       {/* Mode Toggle */}
@@ -220,20 +258,26 @@ export default function ScanPage() {
           onClick={() => setMode('online')}
         >
           <QrCodeIcon size={16} />
-          Online
+          Online Mode
         </button>
         <button
           className={`scanner-mode-btn ${mode === 'offline' ? 'active' : ''}`}
           onClick={() => setMode('offline')}
         >
           <WifiOffIcon size={16} />
-          Offline
+          Offline Mode {pendingCount > 0 && `(${pendingCount})`}
         </button>
       </div>
 
+      {mode === 'offline' && (
+        <div className="alert alert-warning" style={{ fontSize: '0.85rem' }}>
+          <strong>Offline Mode Active:</strong> Scans will be stored locally in browser storage (IndexedDB) with timestamps. Click <strong>Sync Now</strong> when internet is restored to submit the batch to the server.
+        </div>
+      )}
+
       {error && <div className="alert alert-error">{error}</div>}
 
-      {/* Scan Result */}
+      {/* Scan Result Notification */}
       {scanResult && (
         <div className={`scanner-result ${getResultClass()}`}>
           {getResultIcon()}
@@ -242,13 +286,13 @@ export default function ScanPage() {
               {scanResult.status.replace(/_/g, ' ').replace(/-/g, ' ')}
             </div>
             {scanResult.message && (
-              <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>{scanResult.message}</div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.85 }}>{scanResult.message}</div>
             )}
           </div>
         </div>
       )}
 
-      {/* Scanner Viewport */}
+      {/* Scanner Camera Viewport */}
       <div className="scanner-viewport">
         <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
       </div>
@@ -274,28 +318,32 @@ export default function ScanPage() {
         )}
       </div>
 
-      {/* Offline Queue */}
+      {/* Offline Scans Outbox */}
       {offlineQueue.length > 0 && (
         <div className="offline-queue">
-          <h4>
-            <WifiOffIcon size={16} />
-            Offline Queue ({offlineQueue.filter(s => s.syncStatus === 'pending').length} pending)
-          </h4>
-          <p>{offlineQueue.length} total scans queued</p>
-          <button
-            className="btn btn-primary btn-sm mt-sm"
-            onClick={syncOfflineScans}
-            disabled={syncing || offlineQueue.filter(s => s.syncStatus === 'pending').length === 0}
-          >
-            {syncing ? (
-              <>
-                <LoaderIcon size={14} />
-                Syncing...
-              </>
-            ) : (
-              'Sync Now'
-            )}
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+            <h4>
+              <WifiOffIcon size={16} />
+              Offline Outbox ({pendingCount} pending, {offlineQueue.length - pendingCount} synced)
+            </h4>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={syncOfflineScans}
+              disabled={syncing || pendingCount === 0}
+            >
+              {syncing ? (
+                <>
+                  <LoaderIcon size={14} />
+                  Syncing to Server...
+                </>
+              ) : (
+                `Sync Now (${pendingCount})`
+              )}
+            </button>
+          </div>
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+            Scans are preserved in IndexedDB even if you close or refresh this browser.
+          </p>
         </div>
       )}
     </div>
