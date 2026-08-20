@@ -153,7 +153,7 @@ export default function AdminPage() {
     }
   };
 
-  if (authLoading || (user && !user.is_admin)) {
+  if (authLoading || !user || !user.is_admin) {
     return (
       <div className="loading-container">
         <LoaderIcon size={24} />
