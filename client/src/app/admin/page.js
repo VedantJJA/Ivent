@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiDelete } from '@/lib/api';
 import {
   ShieldIcon, UsersIcon, PlusIcon, XIcon, CheckCircleIcon,
   LoaderIcon, CalendarIcon, BarChartIcon
@@ -114,15 +114,7 @@ export default function AdminPage() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/admin/clubs/${clubId}/members/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ivent_token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to remove organizer');
+      await apiDelete(`/admin/clubs/${clubId}/members/${userId}`);
       setSuccess('Organizer removed from club');
       await fetchData();
     } catch (err) {
@@ -137,15 +129,7 @@ export default function AdminPage() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/admin/events/${eventId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ivent_token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete event');
+      const data = await apiDelete(`/admin/events/${eventId}`);
       setSuccess(data.message || 'Event deleted successfully');
       await fetchData();
     } catch (err) {

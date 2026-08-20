@@ -63,6 +63,18 @@ app.get('/', (req, res) => {
   res.json({ service: 'Ivent API Server', status: 'healthy', version: '1.0.0' });
 });
 
+// 404 Handler - returns JSON instead of Express default HTML
+app.use((req, res) => {
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
+});
+
+// Global Error Handler - returns JSON instead of Express default HTML
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  const status = err.status || 500;
+  res.status(status).json({ error: err.message || 'Internal Server Error' });
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);

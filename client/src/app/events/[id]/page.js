@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiDelete } from '@/lib/api';
 import {
   CalendarIcon, UsersIcon, MapPinIcon, TicketIcon, CheckCircleIcon,
   BarChartIcon, ScanIcon, LoaderIcon, ShieldIcon
@@ -62,15 +62,7 @@ export default function EventDetailPage() {
     setDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/events/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ivent_token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete event');
+      await apiDelete(`/events/${id}`);
       router.push(user?.is_admin ? '/admin' : '/');
     } catch (err) {
       setError(err.message);
