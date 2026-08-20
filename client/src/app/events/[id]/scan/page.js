@@ -24,8 +24,8 @@ export default function ScanPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState(null);
   const [knownScannedIds, setKnownScannedIds] = useState(new Set());
-  const [manualInput, setManualInput] = useState('');
-  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualRegId, setManualRegId] = useState('');
+  const [manualTotp, setManualTotp] = useState('');
   const [scanMethod, setScanMethod] = useState('camera'); // 'camera' | 'upload' | 'manual'
   const html5QrRef = useRef(null);
   const stationId = useRef(`station-${Math.random().toString(36).substring(2, 8)}`);
@@ -342,9 +342,38 @@ export default function ScanPage() {
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    if (!manualInput.trim()) return;
-    handleScan(manualInput.trim());
-    setManualInput('');
+    let regId = manualRegId.trim();
+    let totp = manualTotp.trim().replace(/\s+/g, '');
+
+    // Allow user pasting full REG_<id>.<totp> into either field
+    if (regId.startsWith('REG_') && regId.includes('.')) {
+      const match = regId.match(/^REG_([a-f0-9-]+)\.(\d{6})$/i);
+      if (match) {
+        regId = match[1];
+        totp = match[2];
+      }
+    }
+
+    regId = regId.replace(/^REG_/i, '');
+
+    if (!regId) {
+      setScanResult({
+        status: 'error',
+        message: 'Please enter a valid Registration ID / Number.',
+      });
+      return;
+    }
+
+    if (!totp || !/^\d{6}$/.test(totp)) {
+      setScanResult({
+        status: 'error',
+        message: 'Please enter a valid 6-digit Auth Code (numeric only).',
+      });
+      return;
+    }
+
+    handleScan(`REG_${regId}.${totp}`);
+    setManualTotp('');
   };
 
   const saveToIndexedDB = async (scan) => {
@@ -648,22 +677,44 @@ export default function ScanPage() {
       {/* Manual Code Input Method */}
       {scanMethod === 'manual' && (
         <form onSubmit={handleManualSubmit} className="card" style={{ padding: 'var(--space-lg)' }}>
-          <h3 style={{ marginBottom: 'var(--space-sm)' }}>Manual Ticket Check-In</h3>
+          <h3 style={{ marginBottom: 'var(--space-xs)' }}>Manual Ticket Check-In</h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>
-            Type or paste the full QR payload (e.g. <code>REG_d83e9b11-....123456</code>)
+            Enter the Attendee Registration ID and the rotating 6-digit Auth Code from their ticket
           </p>
-          <div className="form-group">
+
+          <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
+            <label className="form-label">Registration No. / ID</label>
             <input
               type="text"
               className="form-input"
-              placeholder="REG_<registration-uuid>.<6-digit-totp>"
-              value={manualInput}
-              onChange={(e) => setManualInput(e.target.value)}
+              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+              value={manualRegId}
+              onChange={(e) => setManualRegId(e.target.value)}
               autoFocus
+              required
             />
           </div>
-          <button type="submit" className="btn btn-primary btn-full btn-lg" disabled={!manualInput.trim()}>
-            Process Check-In
+
+          <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
+            <label className="form-label">6-Digit Auth Code (TOTP)</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. 183076"
+              maxLength={6}
+              value={manualTotp}
+              onChange={(e) => setManualTotp(e.target.value.replace(/\D/g, ''))}
+              style={{ fontSize: '1.2rem', letterSpacing: '2px', fontWeight: 600 }}
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-full btn-lg"
+            disabled={!manualRegId.trim() || !manualTotp.trim()}
+          >
+            Process Manual Check-In
           </button>
         </form>
       )}
