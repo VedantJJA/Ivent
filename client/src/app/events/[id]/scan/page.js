@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   ScanIcon, CheckCircleIcon, XCircleIcon, WifiOffIcon,
-  LoaderIcon, QrCodeIcon
+  LoaderIcon, QrCodeIcon, UploadIcon, KeyIcon
 } from '@/components/Icons';
 
 export default function ScanPage() {
@@ -17,14 +17,19 @@ export default function ScanPage() {
   const [scanResult, setScanResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
   const [error, setError] = useState(null);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState(null);
   const [knownScannedIds, setKnownScannedIds] = useState(new Set());
-  const scannerRef = useRef(null);
+  const [manualInput, setManualInput] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [scanMethod, setScanMethod] = useState('camera'); // 'camera' | 'upload' | 'manual'
   const html5QrRef = useRef(null);
   const stationId = useRef(`station-${Math.random().toString(36).substring(2, 8)}`);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -77,65 +82,183 @@ export default function ScanPage() {
     }
   }, [id, user]);
 
-  // Initialize QR scanner
+  // Enumerate cameras and initialize QR scanner module
   useEffect(() => {
-    let scanner;
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      scanner = new Html5Qrcode('qr-reader');
-      html5QrRef.current = scanner;
-      setScannerReady(true);
-    }).catch(() => {
-      setError('Failed to initialize camera scanner module');
-    });
+    let isMounted = true;
+
+    async function initScanner() {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+
+        if (!isMounted) return;
+
+        // Create scanner instance attached to #qr-reader
+        const scanner = new Html5Qrcode('qr-reader');
+        html5QrRef.current = scanner;
+        setScannerReady(true);
+
+        // Check for cameras
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          if (isMounted && devices && devices.length > 0) {
+            setCameras(devices);
+            // Default to rear camera if present, or first camera
+            const backCamera = devices.find(d =>
+              d.label.toLowerCase().includes('back') ||
+              d.label.toLowerCase().includes('rear') ||
+              d.label.toLowerCase().includes('environment')
+            );
+            setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+          }
+        } catch {
+          // Camera listing might require permission prompt first
+        }
+      } catch (err) {
+        console.error('Failed to load html5-qrcode:', err);
+        if (isMounted) {
+          setError('Failed to load scanner library. You can still use manual ticket code entry.');
+        }
+      }
+    }
+
+    initScanner();
 
     return () => {
-      if (scanner) {
-        scanner.stop().catch(() => {});
+      isMounted = false;
+      if (html5QrRef.current) {
+        html5QrRef.current.stop().catch(() => {});
       }
     };
   }, []);
 
   const startScanning = useCallback(async () => {
     if (!html5QrRef.current || scanning) return;
-    setScanning(true);
+    setError(null);
     setScanResult(null);
 
-    try {
-      await html5QrRef.current.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1,
-        },
-        (decodedText) => {
-          handleScan(decodedText);
-        },
-        () => {} // Ignore scan partial frames
-      );
-    } catch (err) {
-      setError('Could not access camera. Please enable camera permissions in browser settings.');
-      setScanning(false);
+    // Verify browser supports mediaDevices
+    if (typeof window !== 'undefined' && !navigator.mediaDevices?.getUserMedia) {
+      setError('Camera access is not supported on this browser or insecure HTTP connection. Use HTTPS or Manual Entry.');
+      return;
     }
-  }, [scanning]);
+
+    try {
+      // 1. Explicitly request camera permissions if not already granted
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: selectedCameraId ? { deviceId: { exact: selectedCameraId } } : { facingMode: { ideal: 'environment' } }
+        });
+        // Stop stream immediately since Html5Qrcode will manage its own stream
+        stream.getTracks().forEach(t => t.stop());
+
+        // Refresh camera list after permission granted
+        const { Html5Qrcode } = await import('html5-qrcode');
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+          if (!selectedCameraId) {
+            const backCamera = devices.find(d =>
+              d.label.toLowerCase().includes('back') ||
+              d.label.toLowerCase().includes('rear')
+            );
+            setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+          }
+        }
+      } catch (permErr) {
+        console.warn('Initial permission check:', permErr);
+      }
+
+      setScanning(true);
+
+      const qrConfig = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1,
+      };
+
+      const scanCallback = (decodedText) => {
+        handleScan(decodedText);
+      };
+
+      // Strategy 1: Use specific cameraId if selected
+      if (selectedCameraId) {
+        try {
+          await html5QrRef.current.start(selectedCameraId, qrConfig, scanCallback, () => {});
+          return;
+        } catch (camErr) {
+          console.warn('Start with cameraId failed, trying fallback:', camErr);
+        }
+      }
+
+      // Strategy 2: Use ideal environment facingMode
+      try {
+        await html5QrRef.current.start({ facingMode: { ideal: 'environment' } }, qrConfig, scanCallback, () => {});
+        return;
+      } catch (envErr) {
+        console.warn('Start with facingMode environment failed, trying user facing:', envErr);
+      }
+
+      // Strategy 3: Use user facingMode (standard front webcam)
+      await html5QrRef.current.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
+
+    } catch (err) {
+      console.error('Camera start error:', err);
+      setScanning(false);
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Camera permission denied. Please click the camera/lock icon in your browser address bar and select "Allow".');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setError('No camera was detected on this device. You can use File Upload or Manual Ticket Entry.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setError('Camera is in use by another application. Please close other camera tabs/apps and try again.');
+      } else {
+        setError(`Camera error: ${err.message || 'Could not start camera. Try manual entry or file upload.'}`);
+      }
+    }
+  }, [scanning, selectedCameraId]);
 
   const stopScanning = useCallback(async () => {
     if (!html5QrRef.current) return;
     try {
-      await html5QrRef.current.stop();
-    } catch {
-      // Scanner was not active
+      if (scanning) {
+        await html5QrRef.current.stop();
+      }
+    } catch (err) {
+      console.warn('Stop scanning warning:', err);
     }
     setScanning(false);
-  }, []);
+  }, [scanning]);
+
+  // Handle uploaded QR image file
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !html5QrRef.current) return;
+
+    setError(null);
+    setScanResult(null);
+
+    try {
+      const decodedText = await html5QrRef.current.scanFile(file, true);
+      handleScan(decodedText);
+    } catch (err) {
+      setScanResult({
+        status: 'error',
+        message: 'Could not detect a valid QR code in the uploaded image. Please try another image.',
+      });
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleScan = async (decodedText) => {
     // Parse QR payload: REG_<registrationId>.<totpCode>
-    const match = decodedText.match(/^REG_([a-f0-9-]+)\.(\d{6})$/);
+    const match = decodedText.trim().match(/^REG_([a-f0-9-]+)\.(\d{6})$/i);
     if (!match) {
       setScanResult({
         status: 'error',
-        message: 'Invalid QR code format. Please scan a valid Ivent attendee ticket.',
+        message: `Invalid QR format: "${decodedText.slice(0, 40)}". Must be REG_<id>.<6-digit-code>.`,
       });
       return;
     }
@@ -143,9 +266,6 @@ export default function ScanPage() {
     const [, registrationId, totpCode] = match;
     const clientScanId = crypto.randomUUID();
     const deviceTimestamp = new Date().toISOString();
-
-    // Stop scanning while processing
-    await stopScanning();
 
     if (mode === 'online') {
       try {
@@ -173,7 +293,6 @@ export default function ScanPage() {
       const isLocalDuplicate = knownScannedIds.has(registrationId);
 
       if (isLocalDuplicate) {
-        // Find existing scan time if available
         const existingScan = offlineQueue.find(s => s.registrationId === registrationId);
         const timeStr = existingScan
           ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
@@ -184,7 +303,6 @@ export default function ScanPage() {
           message: `DUPLICATE (Offline): Ticket already scanned! ${timeStr}`,
         });
 
-        // Record the rejected duplicate in outbox for audit log
         const duplicateScan = {
           registrationId,
           totpCode,
@@ -200,7 +318,7 @@ export default function ScanPage() {
         return;
       }
 
-      // First time scanned offline: Queue the scan
+      // First time scanned offline
       const scan = {
         registrationId,
         totpCode,
@@ -220,6 +338,13 @@ export default function ScanPage() {
         message: `Offline Scan Queued (${totpCode}). Timestamp: ${new Date(deviceTimestamp).toLocaleTimeString()}`,
       });
     }
+  };
+
+  const handleManualSubmit = (e) => {
+    e.preventDefault();
+    if (!manualInput.trim()) return;
+    handleScan(manualInput.trim());
+    setManualInput('');
   };
 
   const saveToIndexedDB = async (scan) => {
@@ -253,7 +378,6 @@ export default function ScanPage() {
 
       setSyncSummary(summary);
 
-      // Update scan queue statuses
       const updatedQueue = offlineQueue.map(scan => {
         const serverResult = response.results?.find(r => r.clientScanId === scan.clientScanId);
         if (serverResult) {
@@ -269,7 +393,6 @@ export default function ScanPage() {
 
       setOfflineQueue(updatedQueue);
 
-      // Update IndexedDB
       try {
         if (typeof window !== 'undefined' && 'indexedDB' in window) {
           const { openDB } = await import('idb');
@@ -353,7 +476,7 @@ export default function ScanPage() {
         <p>Scan attendee QR codes to check them into this event</p>
       </div>
 
-      {/* Mode Toggle */}
+      {/* Online / Offline Mode Toggle */}
       <div className="scanner-mode-toggle">
         <button
           className={`scanner-mode-btn ${mode === 'online' ? 'active' : ''}`}
@@ -377,7 +500,14 @@ export default function ScanPage() {
         </div>
       )}
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && (
+        <div className="alert alert-error" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div>{error}</div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+            Tip: You can switch to <strong>Upload Image</strong> or <strong>Manual Entry</strong> below if camera permissions are blocked.
+          </div>
+        </div>
+      )}
 
       {/* Scan Result Notification */}
       {scanResult && (
@@ -414,35 +544,133 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* Scanner Camera Viewport */}
-      <div className="scanner-viewport">
-        <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+      {/* Scan Method Selection Tabs */}
+      <div style={{ display: 'flex', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)', background: 'var(--color-bg-secondary)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+        <button
+          className="btn btn-sm"
+          style={{ flex: 1, background: scanMethod === 'camera' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'camera' ? '#fff' : 'var(--color-text-secondary)' }}
+          onClick={() => { setScanMethod('camera'); stopScanning(); }}
+        >
+          <ScanIcon size={14} /> Live Camera
+        </button>
+        <button
+          className="btn btn-sm"
+          style={{ flex: 1, background: scanMethod === 'upload' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'upload' ? '#fff' : 'var(--color-text-secondary)' }}
+          onClick={() => { setScanMethod('upload'); stopScanning(); }}
+        >
+          <UploadIcon size={14} /> Upload Image
+        </button>
+        <button
+          className="btn btn-sm"
+          style={{ flex: 1, background: scanMethod === 'manual' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'manual' ? '#fff' : 'var(--color-text-secondary)' }}
+          onClick={() => { setScanMethod('manual'); stopScanning(); }}
+        >
+          <KeyIcon size={14} /> Manual Entry
+        </button>
       </div>
 
-      {/* Controls */}
-      <div className="flex gap-sm">
-        {!scanning ? (
-          <button
-            className="btn btn-primary btn-full btn-lg"
-            onClick={startScanning}
-            disabled={!scannerReady}
+      {/* Camera Selection Dropdown if multiple cameras detected */}
+      {scanMethod === 'camera' && cameras.length > 1 && (
+        <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
+          <label className="form-label" style={{ fontSize: '0.8rem' }}>Select Camera Source</label>
+          <select
+            className="form-select"
+            value={selectedCameraId}
+            onChange={(e) => {
+              setSelectedCameraId(e.target.value);
+              if (scanning) {
+                stopScanning().then(startScanning);
+              }
+            }}
           >
-            <ScanIcon size={18} />
-            Start Scanning
+            {cameras.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label || `Camera ${c.id.slice(0, 8)}...`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Live Camera Viewport */}
+      {scanMethod === 'camera' && (
+        <>
+          <div className="scanner-viewport">
+            <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+          </div>
+
+          <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
+            {!scanning ? (
+              <button
+                className="btn btn-primary btn-full btn-lg"
+                onClick={startScanning}
+                disabled={!scannerReady}
+              >
+                <ScanIcon size={18} />
+                Start Camera Scan
+              </button>
+            ) : (
+              <button
+                className="btn btn-danger btn-full btn-lg"
+                onClick={stopScanning}
+              >
+                Stop Camera
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Upload Image Method */}
+      {scanMethod === 'upload' && (
+        <div className="card" style={{ textAlign: 'center', padding: 'var(--space-xl)' }}>
+          <UploadIcon size={40} color="var(--color-primary-400)" />
+          <h3 style={{ marginTop: 'var(--space-md)' }}>Scan from Ticket Image or Photo</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)' }}>
+            Upload a screenshot or photo of an attendee ticket QR code
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileUpload}
+            style={{ display: 'none' }}
+            id="qr-file-upload"
+          />
+          <label htmlFor="qr-file-upload" className="btn btn-primary btn-lg" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <UploadIcon size={18} />
+            Choose Photo / Take Picture
+          </label>
+        </div>
+      )}
+
+      {/* Manual Code Input Method */}
+      {scanMethod === 'manual' && (
+        <form onSubmit={handleManualSubmit} className="card" style={{ padding: 'var(--space-lg)' }}>
+          <h3 style={{ marginBottom: 'var(--space-sm)' }}>Manual Ticket Check-In</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>
+            Type or paste the full QR payload (e.g. <code>REG_d83e9b11-....123456</code>)
+          </p>
+          <div className="form-group">
+            <input
+              type="text"
+              className="form-input"
+              placeholder="REG_<registration-uuid>.<6-digit-totp>"
+              value={manualInput}
+              onChange={(e) => setManualInput(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <button type="submit" className="btn btn-primary btn-full btn-lg" disabled={!manualInput.trim()}>
+            Process Check-In
           </button>
-        ) : (
-          <button
-            className="btn btn-danger btn-full btn-lg"
-            onClick={stopScanning}
-          >
-            Stop Scanning
-          </button>
-        )}
-      </div>
+        </form>
+      )}
 
       {/* Offline Outbox & Scans List */}
       {offlineQueue.length > 0 && (
-        <div className="offline-queue">
+        <div className="offline-queue" style={{ marginTop: 'var(--space-xl)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
             <h4>
               <WifiOffIcon size={16} />

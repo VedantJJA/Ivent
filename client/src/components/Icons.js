@@ -213,3 +213,23 @@ export function LoaderIcon({ size = 20, color = 'currentColor' }) {
     </svg>
   );
 }
+
+export function UploadIcon({ size = 20, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+export function KeyIcon({ size = 20, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21 2-2 2m-1.5 1.5L19 7l-2 2m-1.5 1.5L17 12l-4 4-2-2-4 4a5.66 5.66 0 1 1-8-8l4-4-2-2 4-4" />
+      <circle cx="7.5" cy="16.5" r="1.5" />
+    </svg>
+  );
+}
+
