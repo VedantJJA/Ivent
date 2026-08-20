@@ -7,7 +7,7 @@ import { useNetwork } from '@/context/NetworkContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   ScanIcon, CheckCircleIcon, XCircleIcon, WifiOffIcon,
-  LoaderIcon, QrCodeIcon, KeyIcon
+  LoaderIcon, QrCodeIcon, KeyIcon, ClockIcon
 } from '@/components/Icons';
 
 export default function ScanPage() {
@@ -30,8 +30,12 @@ export default function ScanPage() {
   const [manualIdentifier, setManualIdentifier] = useState('');
   const [manualTotp, setManualTotp] = useState('');
   const [scanMethod, setScanMethod] = useState('camera'); // 'camera' | 'manual'
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+
   const html5QrRef = useRef(null);
   const stationId = useRef(`station-${Math.random().toString(36).substring(2, 8)}`);
+  const lastScanTimeRef = useRef(0);
+  const cooldownTimerRef = useRef(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -147,7 +151,6 @@ export default function ScanPage() {
     try {
       const { Html5Qrcode } = await import('html5-qrcode');
 
-      // Stop any prior instance
       if (html5QrRef.current) {
         try {
           if (html5QrRef.current.isScanning) {
@@ -229,10 +232,39 @@ export default function ScanPage() {
           // ignore
         }
       }
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
     };
   }, [scanMethod]);
 
+  const startCooldown = () => {
+    lastScanTimeRef.current = Date.now();
+    setCooldownRemaining(3);
+
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+    }
+
+    const startTime = Date.now();
+    cooldownTimerRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const remaining = Math.max(0, 3 - elapsed);
+      setCooldownRemaining(remaining);
+      if (remaining <= 0) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    }, 250);
+  };
+
   const handleScan = async (decodedText) => {
+    // 3-second gap/cooldown between scans
+    const now = Date.now();
+    if (now - lastScanTimeRef.current < 3000) {
+      return;
+    }
+
     let registrationId = '';
     let totpCode = '';
 
@@ -249,12 +281,15 @@ export default function ScanPage() {
     }
 
     if (!registrationId || !totpCode || !/^\d{6}$/.test(totpCode)) {
+      startCooldown();
       setScanResult({
         status: 'error',
         message: `Invalid QR code payload: "${decodedText.slice(0, 30)}". Format must be REG_<identifier>.<6-digit-auth-code>.`,
       });
       return;
     }
+
+    startCooldown();
 
     const clientScanId = crypto.randomUUID();
     const deviceTimestamp = new Date().toISOString();
@@ -291,34 +326,27 @@ export default function ScanPage() {
   };
 
   const queueOfflineScan = (registrationId, totpCode, clientScanId, deviceTimestamp) => {
-    const isLocalDuplicate = knownScannedIdentifiers.has(registrationId.toLowerCase());
+    const regLower = registrationId.toLowerCase();
 
-    if (isLocalDuplicate) {
-      const existingScan = offlineQueue.find(s => s.registrationId.toLowerCase() === registrationId.toLowerCase());
+    // Instant offline duplicate rejection if token/ID is already in queue or scanned list
+    const isAlreadyQueued = offlineQueue.some(s => s.registrationId.toLowerCase() === regLower);
+    const isAlreadyKnown = knownScannedIdentifiers.has(regLower);
+
+    if (isAlreadyQueued || isAlreadyKnown) {
+      const existingScan = offlineQueue.find(s => s.registrationId.toLowerCase() === regLower);
       const timeStr = existingScan
-        ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
-        : '(Already checked in previously)';
+        ? `(Already scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
+        : '(Already checked in)';
 
+      // Instantly reject duplicate scan without adding to queue
       setScanResult({
         status: 'rejected_duplicate',
-        message: `DUPLICATE (Offline): Attendee already scanned! ${timeStr}`,
+        message: `REJECTED: Duplicate Scan (Offline). This ticket was already scanned! ${timeStr}`,
       });
-
-      const duplicateScan = {
-        registrationId,
-        totpCode,
-        stationId: stationId.current,
-        clientScanId,
-        deviceTimestamp,
-        syncStatus: 'pending',
-        localResult: 'rejected_duplicate',
-      };
-
-      setOfflineQueue(prev => [...prev, duplicateScan]);
-      saveToIndexedDB(duplicateScan);
       return;
     }
 
+    // First time scanned offline: accept locally and queue for sync
     const scan = {
       registrationId,
       totpCode,
@@ -329,7 +357,7 @@ export default function ScanPage() {
       localResult: 'accepted_locally',
     };
 
-    setKnownScannedIdentifiers(prev => new Set([...prev, registrationId.toLowerCase()]));
+    setKnownScannedIdentifiers(prev => new Set([...prev, regLower]));
     setOfflineQueue(prev => [...prev, scan]);
     saveToIndexedDB(scan);
 
@@ -544,6 +572,27 @@ export default function ScanPage() {
         </div>
       )}
 
+      {/* 3-Second Scan Gap / Cooldown Indicator */}
+      {cooldownRemaining > 0 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          padding: '6px 12px',
+          marginBottom: 'var(--space-md)',
+          background: 'rgba(59, 130, 246, 0.15)',
+          border: '1px solid var(--color-primary-500)',
+          borderRadius: 'var(--radius-md)',
+          color: 'var(--color-primary-400)',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+        }}>
+          <ClockIcon size={16} />
+          <span>Next scan ready in {cooldownRemaining}s</span>
+        </div>
+      )}
+
       {/* Scan Result Notification */}
       {scanResult && (
         <div className={`scanner-result ${getResultClass()}`}>
@@ -630,7 +679,7 @@ export default function ScanPage() {
             <button
               className="btn btn-primary btn-full btn-lg"
               onClick={startScanning}
-              disabled={startingCamera}
+              disabled={startingCamera || cooldownRemaining > 0}
             >
               {startingCamera ? (
                 <>
@@ -691,9 +740,9 @@ export default function ScanPage() {
           <button
             type="submit"
             className="btn btn-primary btn-full btn-lg"
-            disabled={!manualIdentifier.trim() || !manualTotp.trim()}
+            disabled={!manualIdentifier.trim() || !manualTotp.trim() || cooldownRemaining > 0}
           >
-            Verify and Check In
+            {cooldownRemaining > 0 ? `Wait ${cooldownRemaining}s...` : 'Verify and Check In'}
           </button>
         </form>
       )}
