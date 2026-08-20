@@ -1,17 +1,43 @@
 // API Utility for Ivent Client
 
-const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
-
 export function getApiUrl() {
-  if (rawApiUrl) {
-    return rawApiUrl;
+  let url = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+
+  // If URL is set, normalize it
+  if (url) {
+    // If it's a hostname without protocol (e.g. "ivent-api.onrender.com" or "ivent-api")
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+
+    // If it's an internal Render service name like https://ivent-api (missing .onrender.com)
+    try {
+      const parsed = new URL(url);
+      if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
+        // Single word hostname on Render -> append .onrender.com
+        url = `https://${parsed.hostname}.onrender.com`;
+      }
+    } catch {
+      if (!url.includes('.') && !url.includes('localhost')) {
+        url = `https://${url.replace(/^https?:\/\//, '')}.onrender.com`;
+      }
+    }
+    return url;
   }
+
+  // If in browser and no env variable was injected at build time
   if (typeof window !== 'undefined') {
-    // If running in browser and no NEXT_PUBLIC_API_URL was injected at build time
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return 'http://localhost:3001';
     }
+    // If running on Render (*.onrender.com), auto-detect backend by replacing client with api
+    if (window.location.hostname.endsWith('.onrender.com')) {
+      const host = window.location.hostname;
+      const apiHost = host.replace(/-client\./, '-api.').replace(/client\./, 'api.');
+      return `https://${apiHost}`;
+    }
   }
+
   return 'http://localhost:3001';
 }
 
@@ -30,7 +56,7 @@ async function safeFetch(url, options = {}) {
     res = await fetch(url, options);
   } catch (networkErr) {
     throw new Error(
-      `Cannot connect to backend server at ${url}. If using Render free tier, the backend may be waking up (takes ~30-50 seconds). Please try again shortly.`
+      `Cannot connect to backend server at ${url}. If using Render free tier, the backend may be waking up (takes ~30-50 seconds). Please wait and refresh.`
     );
   }
 
