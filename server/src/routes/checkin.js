@@ -34,7 +34,7 @@ router.post('/:id/checkin', requireAuth, requireOrganizer, async (req, res) => {
   }
 });
 
-// POST /events/:id/checkin/sync-batch -- batch sync offline scans
+// POST /events/:id/checkin/sync-batch -- batch sync offline scans with summary
 router.post('/:id/checkin/sync-batch', requireAuth, requireOrganizer, async (req, res) => {
   try {
     const { scans } = req.body;
@@ -48,13 +48,29 @@ router.post('/:id/checkin/sync-batch', requireAuth, requireOrganizer, async (req
     for (const scan of scans) {
       try {
         const result = await syncOfflineScan(scan, io);
-        results.push({ clientScanId: scan.clientScanId, ...result });
+        results.push({ clientScanId: scan.clientScanId, registrationId: scan.registrationId, ...result });
       } catch (err) {
-        results.push({ clientScanId: scan.clientScanId, status: 'error', message: err.message });
+        results.push({ clientScanId: scan.clientScanId, registrationId: scan.registrationId, status: 'error', message: err.message });
       }
     }
 
-    res.json({ results });
+    const acceptedCount = results.filter(r => r.status === 'accepted').length;
+    const duplicateCount = results.filter(r => r.status === 'rejected_duplicate').length;
+    const invalidCount = results.filter(r => r.status === 'rejected_invalid_totp').length;
+    const errorCount = results.filter(r => r.status !== 'accepted' && r.status !== 'rejected_duplicate' && r.status !== 'rejected_invalid_totp').length;
+    const rejectedCount = results.length - acceptedCount;
+
+    res.json({
+      summary: {
+        total: results.length,
+        accepted: acceptedCount,
+        rejected: rejectedCount,
+        rejectedDuplicates: duplicateCount,
+        rejectedInvalid: invalidCount,
+        errors: errorCount,
+      },
+      results,
+    });
   } catch (err) {
     console.error('Batch sync error:', err);
     res.status(500).json({ error: 'Server error' });

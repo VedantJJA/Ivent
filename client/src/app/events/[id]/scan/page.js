@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { apiPost } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import {
   ScanIcon, CheckCircleIcon, XCircleIcon, WifiOffIcon,
   LoaderIcon, QrCodeIcon
@@ -20,6 +20,8 @@ export default function ScanPage() {
   const [error, setError] = useState(null);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState(null);
+  const [knownScannedIds, setKnownScannedIds] = useState(new Set());
   const scannerRef = useRef(null);
   const html5QrRef = useRef(null);
   const stationId = useRef(`station-${Math.random().toString(36).substring(2, 8)}`);
@@ -30,9 +32,10 @@ export default function ScanPage() {
     }
   }, [authLoading, user, router]);
 
-  // Load existing offline queue from IndexedDB on startup
+  // Load existing offline queue from IndexedDB and fetch online event roster on startup
   useEffect(() => {
-    async function loadIndexedDB() {
+    async function loadData() {
+      // 1. Load IndexedDB cached scans
       try {
         if (typeof window !== 'undefined' && 'indexedDB' in window) {
           const { openDB } = await import('idb');
@@ -47,14 +50,32 @@ export default function ScanPage() {
           const allScans = await db.getAll('scan_outbox');
           if (allScans && allScans.length > 0) {
             setOfflineQueue(allScans);
+            const scannedIds = new Set(allScans.map(s => s.registrationId));
+            setKnownScannedIds(prev => new Set([...prev, ...scannedIds]));
           }
         }
       } catch (err) {
         console.error('Error loading IndexedDB:', err);
       }
+
+      // 2. Fetch already checked in registrations from server to detect online check-ins locally
+      try {
+        const dashboardData = await apiGet(`/events/${id}/dashboard`);
+        if (dashboardData?.registrations) {
+          const checkedIn = dashboardData.registrations
+            .filter(r => r.checked_in_at)
+            .map(r => r.id);
+          setKnownScannedIds(prev => new Set([...prev, ...checkedIn]));
+        }
+      } catch {
+        // May be offline initially, continue with local storage
+      }
     }
-    loadIndexedDB();
-  }, []);
+
+    if (user) {
+      loadData();
+    }
+  }, [id, user]);
 
   // Initialize QR scanner
   useEffect(() => {
@@ -63,8 +84,8 @@ export default function ScanPage() {
       scanner = new Html5Qrcode('qr-reader');
       html5QrRef.current = scanner;
       setScannerReady(true);
-    }).catch((err) => {
-      setError('Failed to load camera QR scanner module');
+    }).catch(() => {
+      setError('Failed to initialize camera scanner module');
     });
 
     return () => {
@@ -93,7 +114,7 @@ export default function ScanPage() {
         () => {} // Ignore scan partial frames
       );
     } catch (err) {
-      setError('Could not access camera. Please enable camera permissions.');
+      setError('Could not access camera. Please enable camera permissions in browser settings.');
       setScanning(false);
     }
   }, [scanning]);
@@ -114,7 +135,7 @@ export default function ScanPage() {
     if (!match) {
       setScanResult({
         status: 'error',
-        message: 'Invalid QR code format. Please scan a valid Ivent ticket.',
+        message: 'Invalid QR code format. Please scan a valid Ivent attendee ticket.',
       });
       return;
     }
@@ -135,6 +156,11 @@ export default function ScanPage() {
           clientScanId,
           deviceTimestamp,
         });
+
+        if (result.status === 'accepted') {
+          setKnownScannedIds(prev => new Set([...prev, registrationId]));
+        }
+
         setScanResult(result);
       } catch (err) {
         setScanResult({
@@ -143,7 +169,38 @@ export default function ScanPage() {
         });
       }
     } else {
-      // Offline mode: queue the scan locally
+      // Offline mode: Check for duplicate scan locally first
+      const isLocalDuplicate = knownScannedIds.has(registrationId);
+
+      if (isLocalDuplicate) {
+        // Find existing scan time if available
+        const existingScan = offlineQueue.find(s => s.registrationId === registrationId);
+        const timeStr = existingScan
+          ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
+          : '(Already checked in previously)';
+
+        setScanResult({
+          status: 'rejected_duplicate',
+          message: `DUPLICATE (Offline): Ticket already scanned! ${timeStr}`,
+        });
+
+        // Record the rejected duplicate in outbox for audit log
+        const duplicateScan = {
+          registrationId,
+          totpCode,
+          stationId: stationId.current,
+          clientScanId,
+          deviceTimestamp,
+          syncStatus: 'pending',
+          localResult: 'rejected_duplicate',
+        };
+
+        setOfflineQueue(prev => [...prev, duplicateScan]);
+        saveToIndexedDB(duplicateScan);
+        return;
+      }
+
+      // First time scanned offline: Queue the scan
       const scan = {
         registrationId,
         totpCode,
@@ -151,44 +208,65 @@ export default function ScanPage() {
         clientScanId,
         deviceTimestamp,
         syncStatus: 'pending',
+        localResult: 'accepted_locally',
       };
 
+      setKnownScannedIds(prev => new Set([...prev, registrationId]));
       setOfflineQueue(prev => [...prev, scan]);
+      saveToIndexedDB(scan);
+
       setScanResult({
         status: 'queued',
         message: `Offline Scan Queued (${totpCode}). Timestamp: ${new Date(deviceTimestamp).toLocaleTimeString()}`,
       });
+    }
+  };
 
-      // Save to IndexedDB
-      try {
-        if (typeof window !== 'undefined' && 'indexedDB' in window) {
-          const { openDB } = await import('idb');
-          const db = await openDB('ivent-scanner', 1);
-          await db.put('scan_outbox', scan);
-        }
-      } catch (err) {
-        console.error('IndexedDB save error:', err);
+  const saveToIndexedDB = async (scan) => {
+    try {
+      if (typeof window !== 'undefined' && 'indexedDB' in window) {
+        const { openDB } = await import('idb');
+        const db = await openDB('ivent-scanner', 1);
+        await db.put('scan_outbox', scan);
       }
+    } catch (err) {
+      console.error('IndexedDB save error:', err);
     }
   };
 
   const syncOfflineScans = async () => {
-    if (offlineQueue.length === 0) return;
+    const pendingScans = offlineQueue.filter(s => s.syncStatus === 'pending');
+    if (pendingScans.length === 0) return;
+
     setSyncing(true);
+    setSyncSummary(null);
+
     try {
-      const pendingScans = offlineQueue.filter(s => s.syncStatus === 'pending');
-      if (pendingScans.length === 0) {
-        setSyncing(false);
-        return;
-      }
+      const response = await apiPost(`/events/${id}/checkin/sync-batch`, { scans: pendingScans });
+      const summary = response.summary || {
+        total: pendingScans.length,
+        accepted: response.results?.filter(r => r.status === 'accepted').length || 0,
+        rejected: (response.results?.length || 0) - (response.results?.filter(r => r.status === 'accepted').length || 0),
+        rejectedDuplicates: response.results?.filter(r => r.status === 'rejected_duplicate').length || 0,
+        rejectedInvalid: response.results?.filter(r => r.status === 'rejected_invalid_totp').length || 0,
+      };
 
-      const result = await apiPost(`/events/${id}/checkin/sync-batch`, { scans: pendingScans });
+      setSyncSummary(summary);
 
-      // Update in-memory state
+      // Update scan queue statuses
       const updatedQueue = offlineQueue.map(scan => {
-        const synced = result.results.find(r => r.clientScanId === scan.clientScanId);
-        return synced ? { ...scan, syncStatus: 'synced', result: synced.status } : scan;
+        const serverResult = response.results?.find(r => r.clientScanId === scan.clientScanId);
+        if (serverResult) {
+          return {
+            ...scan,
+            syncStatus: 'synced',
+            serverStatus: serverResult.status,
+            serverMessage: serverResult.status === 'accepted' ? 'Accepted by Server' : `Rejected: ${serverResult.status}`,
+          };
+        }
+        return scan;
       });
+
       setOfflineQueue(updatedQueue);
 
       // Update IndexedDB
@@ -205,8 +283,8 @@ export default function ScanPage() {
       }
 
       setScanResult({
-        status: 'sync-complete',
-        message: `Batch sync complete: ${pendingScans.length} offline scans recorded on server`,
+        status: summary.rejected > 0 ? 'sync-partial' : 'sync-complete',
+        message: `Sync Complete: ${summary.accepted} Accepted, ${summary.rejected} Rejected (${summary.rejectedDuplicates} Duplicates, ${summary.rejectedInvalid} Invalid Code)`,
       });
     } catch (err) {
       setScanResult({
@@ -218,16 +296,39 @@ export default function ScanPage() {
     }
   };
 
+  const clearSyncedScans = async () => {
+    const remaining = offlineQueue.filter(s => s.syncStatus === 'pending');
+    setOfflineQueue(remaining);
+    setSyncSummary(null);
+
+    try {
+      if (typeof window !== 'undefined' && 'indexedDB' in window) {
+        const { openDB } = await import('idb');
+        const db = await openDB('ivent-scanner', 1);
+        await db.clear('scan_outbox');
+        for (const scan of remaining) {
+          await db.put('scan_outbox', scan);
+        }
+      }
+    } catch (err) {
+      console.error('IndexedDB clear error:', err);
+    }
+  };
+
   const getResultIcon = () => {
     if (!scanResult) return null;
-    if (scanResult.status === 'accepted') return <CheckCircleIcon size={32} color="var(--color-success)" />;
-    if (scanResult.status === 'queued' || scanResult.status === 'sync-complete') return <CheckCircleIcon size={32} color="var(--color-warning)" />;
+    if (scanResult.status === 'accepted' || scanResult.status === 'sync-complete') {
+      return <CheckCircleIcon size={32} color="var(--color-success)" />;
+    }
+    if (scanResult.status === 'queued' || scanResult.status === 'sync-partial') {
+      return <CheckCircleIcon size={32} color="var(--color-warning)" />;
+    }
     return <XCircleIcon size={32} color="var(--color-error)" />;
   };
 
   const getResultClass = () => {
     if (!scanResult) return '';
-    if (scanResult.status === 'accepted') return 'result-accepted';
+    if (scanResult.status === 'accepted' || scanResult.status === 'sync-complete') return 'result-accepted';
     return 'result-rejected';
   };
 
@@ -240,6 +341,7 @@ export default function ScanPage() {
   }
 
   const pendingCount = offlineQueue.filter(s => s.syncStatus === 'pending').length;
+  const syncedCount = offlineQueue.filter(s => s.syncStatus === 'synced').length;
 
   return (
     <div className="scanner-container">
@@ -271,7 +373,7 @@ export default function ScanPage() {
 
       {mode === 'offline' && (
         <div className="alert alert-warning" style={{ fontSize: '0.85rem' }}>
-          <strong>Offline Mode Active:</strong> Scans will be stored locally in browser storage (IndexedDB) with timestamps. Click <strong>Sync Now</strong> when internet is restored to submit the batch to the server.
+          <strong>Offline Mode Active:</strong> Scans are checked locally for duplicates and stored in IndexedDB. Click <strong>Sync Now</strong> when internet is restored to submit to the server.
         </div>
       )}
 
@@ -287,6 +389,26 @@ export default function ScanPage() {
             </div>
             {scanResult.message && (
               <div style={{ fontSize: '0.85rem', opacity: 0.85 }}>{scanResult.message}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Sync Summary Notification Banner */}
+      {syncSummary && (
+        <div className="card" style={{ marginBottom: 'var(--space-md)', borderColor: syncSummary.rejected > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 'var(--space-sm)' }}>
+            Batch Synchronization Summary
+          </h3>
+          <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
+            <span className="badge badge-muted">Total: {syncSummary.total}</span>
+            <span className="badge badge-success">Accepted: {syncSummary.accepted}</span>
+            <span className="badge badge-error">Rejected: {syncSummary.rejected}</span>
+            {syncSummary.rejectedDuplicates > 0 && (
+              <span className="badge badge-warning">{syncSummary.rejectedDuplicates} Duplicates</span>
+            )}
+            {syncSummary.rejectedInvalid > 0 && (
+              <span className="badge badge-error">{syncSummary.rejectedInvalid} Invalid Code</span>
             )}
           </div>
         </div>
@@ -318,32 +440,81 @@ export default function ScanPage() {
         )}
       </div>
 
-      {/* Offline Scans Outbox */}
+      {/* Offline Outbox & Scans List */}
       {offlineQueue.length > 0 && (
         <div className="offline-queue">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
             <h4>
               <WifiOffIcon size={16} />
-              Offline Outbox ({pendingCount} pending, {offlineQueue.length - pendingCount} synced)
+              Offline Outbox ({pendingCount} pending, {syncedCount} synced)
             </h4>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={syncOfflineScans}
-              disabled={syncing || pendingCount === 0}
-            >
-              {syncing ? (
-                <>
-                  <LoaderIcon size={14} />
-                  Syncing to Server...
-                </>
-              ) : (
-                `Sync Now (${pendingCount})`
+            <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+              {pendingCount > 0 && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={syncOfflineScans}
+                  disabled={syncing}
+                >
+                  {syncing ? (
+                    <>
+                      <LoaderIcon size={14} />
+                      Syncing...
+                    </>
+                  ) : (
+                    `Sync Now (${pendingCount})`
+                  )}
+                </button>
               )}
-            </button>
+              {syncedCount > 0 && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={clearSyncedScans}
+                  title="Remove synced items from local list"
+                >
+                  Clear Synced
+                </button>
+              )}
+            </div>
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-            Scans are preserved in IndexedDB even if you close or refresh this browser.
-          </p>
+
+          <div className="table-container" style={{ marginTop: 'var(--space-sm)' }}>
+            <table className="table" style={{ fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Scan Time</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offlineQueue.slice().reverse().map((scan) => (
+                  <tr key={scan.clientScanId}>
+                    <td style={{ fontFamily: 'monospace' }}>
+                      {scan.registrationId.slice(0, 8)}...
+                    </td>
+                    <td>{new Date(scan.deviceTimestamp).toLocaleTimeString()}</td>
+                    <td>
+                      {scan.syncStatus === 'pending' ? (
+                        scan.localResult === 'rejected_duplicate' ? (
+                          <span className="badge badge-error">Offline Duplicate</span>
+                        ) : (
+                          <span className="badge badge-warning">Pending Sync</span>
+                        )
+                      ) : scan.serverStatus === 'accepted' ? (
+                        <span className="badge badge-success">Accepted</span>
+                      ) : scan.serverStatus === 'rejected_duplicate' ? (
+                        <span className="badge badge-error">Rejected: Duplicate</span>
+                      ) : scan.serverStatus === 'rejected_invalid_totp' ? (
+                        <span className="badge badge-error">Rejected: Invalid Code</span>
+                      ) : (
+                        <span className="badge badge-muted">{scan.serverStatus || 'Synced'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
