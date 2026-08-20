@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useNetwork } from '@/context/NetworkContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   ScanIcon, CheckCircleIcon, XCircleIcon, WifiOffIcon,
@@ -12,8 +13,10 @@ import {
 export default function ScanPage() {
   const { id } = useParams();
   const { user, loading: authLoading } = useAuth();
+  const { isOnline } = useNetwork();
   const router = useRouter();
-  const [mode, setMode] = useState('online');
+
+  const [mode, setMode] = useState(isOnline ? 'online' : 'offline');
   const [scanResult, setScanResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [startingCamera, setStartingCamera] = useState(false);
@@ -35,6 +38,11 @@ export default function ScanPage() {
       router.push('/login');
     }
   }, [authLoading, user, router]);
+
+  // Automatically adapt mode to network state
+  useEffect(() => {
+    setMode(isOnline ? 'online' : 'offline');
+  }, [isOnline]);
 
   // Load existing offline queue from IndexedDB and fetch online event roster on startup
   useEffect(() => {
@@ -150,7 +158,6 @@ export default function ScanPage() {
         }
       }
 
-      // Ensure qr-reader container exists
       const container = document.getElementById('qr-reader');
       if (!container) {
         throw new Error('Scanner container not ready. Please try again.');
@@ -169,7 +176,6 @@ export default function ScanPage() {
         handleScan(decodedText);
       };
 
-      // Try camera launch
       if (selectedCameraId) {
         try {
           await qrScanner.start(selectedCameraId, qrConfig, scanCallback, () => {});
@@ -230,13 +236,11 @@ export default function ScanPage() {
     let registrationId = '';
     let totpCode = '';
 
-    // Check if format is REG_<identifier>.<6-digit-code>
     const match = decodedText.trim().match(/^REG_([a-zA-Z0-9@._-]+)\.(\d{6})$/i);
     if (match) {
       registrationId = match[1];
       totpCode = match[2];
     } else {
-      // If user provided single text with dot
       const dotIndex = decodedText.lastIndexOf('.');
       if (dotIndex > 0) {
         registrationId = decodedText.substring(0, dotIndex).replace(/^REG_/i, '').trim();
@@ -255,7 +259,7 @@ export default function ScanPage() {
     const clientScanId = crypto.randomUUID();
     const deviceTimestamp = new Date().toISOString();
 
-    if (mode === 'online') {
+    if (mode === 'online' && isOnline) {
       try {
         const result = await apiPost(`/events/${id}/checkin`, {
           registrationId,
@@ -271,61 +275,68 @@ export default function ScanPage() {
 
         setScanResult(result);
       } catch (err) {
-        setScanResult({
-          status: 'error',
-          message: err.message,
-        });
+        // If network request failed, fallback to offline queue
+        if (!isOnline || err.message.includes('fetch') || err.message.includes('network') || err.message.includes('offline')) {
+          queueOfflineScan(registrationId, totpCode, clientScanId, deviceTimestamp);
+        } else {
+          setScanResult({
+            status: 'error',
+            message: err.message,
+          });
+        }
       }
     } else {
-      // Offline mode: Check for duplicate scan locally first
-      const isLocalDuplicate = knownScannedIdentifiers.has(registrationId.toLowerCase());
+      queueOfflineScan(registrationId, totpCode, clientScanId, deviceTimestamp);
+    }
+  };
 
-      if (isLocalDuplicate) {
-        const existingScan = offlineQueue.find(s => s.registrationId.toLowerCase() === registrationId.toLowerCase());
-        const timeStr = existingScan
-          ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
-          : '(Already checked in previously)';
+  const queueOfflineScan = (registrationId, totpCode, clientScanId, deviceTimestamp) => {
+    const isLocalDuplicate = knownScannedIdentifiers.has(registrationId.toLowerCase());
 
-        setScanResult({
-          status: 'rejected_duplicate',
-          message: `DUPLICATE (Offline): Attendee already scanned! ${timeStr}`,
-        });
+    if (isLocalDuplicate) {
+      const existingScan = offlineQueue.find(s => s.registrationId.toLowerCase() === registrationId.toLowerCase());
+      const timeStr = existingScan
+        ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
+        : '(Already checked in previously)';
 
-        const duplicateScan = {
-          registrationId,
-          totpCode,
-          stationId: stationId.current,
-          clientScanId,
-          deviceTimestamp,
-          syncStatus: 'pending',
-          localResult: 'rejected_duplicate',
-        };
+      setScanResult({
+        status: 'rejected_duplicate',
+        message: `DUPLICATE (Offline): Attendee already scanned! ${timeStr}`,
+      });
 
-        setOfflineQueue(prev => [...prev, duplicateScan]);
-        saveToIndexedDB(duplicateScan);
-        return;
-      }
-
-      // First time scanned offline
-      const scan = {
+      const duplicateScan = {
         registrationId,
         totpCode,
         stationId: stationId.current,
         clientScanId,
         deviceTimestamp,
         syncStatus: 'pending',
-        localResult: 'accepted_locally',
+        localResult: 'rejected_duplicate',
       };
 
-      setKnownScannedIdentifiers(prev => new Set([...prev, registrationId.toLowerCase()]));
-      setOfflineQueue(prev => [...prev, scan]);
-      saveToIndexedDB(scan);
-
-      setScanResult({
-        status: 'queued',
-        message: `Offline Scan Queued (${totpCode}). Timestamp: ${new Date(deviceTimestamp).toLocaleTimeString()}`,
-      });
+      setOfflineQueue(prev => [...prev, duplicateScan]);
+      saveToIndexedDB(duplicateScan);
+      return;
     }
+
+    const scan = {
+      registrationId,
+      totpCode,
+      stationId: stationId.current,
+      clientScanId,
+      deviceTimestamp,
+      syncStatus: 'pending',
+      localResult: 'accepted_locally',
+    };
+
+    setKnownScannedIdentifiers(prev => new Set([...prev, registrationId.toLowerCase()]));
+    setOfflineQueue(prev => [...prev, scan]);
+    saveToIndexedDB(scan);
+
+    setScanResult({
+      status: 'queued',
+      message: `Offline Scan Queued (${totpCode}). Timestamp: ${new Date(deviceTimestamp).toLocaleTimeString()}`,
+    });
   };
 
   const handleManualSubmit = (e) => {
@@ -333,7 +344,6 @@ export default function ScanPage() {
     let identifier = manualIdentifier.trim();
     let totp = manualTotp.trim().replace(/\s+/g, '');
 
-    // Allow user pasting full REG_<id>.<totp> into identifier field
     if (identifier.startsWith('REG_') && identifier.includes('.')) {
       const match = identifier.match(/^REG_([a-zA-Z0-9@._-]+)\.(\d{6})$/i);
       if (match) {
@@ -360,7 +370,6 @@ export default function ScanPage() {
       return;
     }
 
-    // Combine into standard format and process
     handleScan(`REG_${identifier}.${totp}`);
     setManualTotp('');
   };
@@ -377,9 +386,9 @@ export default function ScanPage() {
     }
   };
 
-  const syncOfflineScans = async () => {
+  const syncOfflineScans = useCallback(async () => {
     const pendingScans = offlineQueue.filter(s => s.syncStatus === 'pending');
-    if (pendingScans.length === 0) return;
+    if (pendingScans.length === 0 || syncing) return;
 
     setSyncing(true);
     setSyncSummary(null);
@@ -435,7 +444,14 @@ export default function ScanPage() {
     } finally {
       setSyncing(false);
     }
-  };
+  }, [offlineQueue, id, syncing]);
+
+  // Auto-sync pending offline scans when reconnected online
+  useEffect(() => {
+    if (isOnline && offlineQueue.some(s => s.syncStatus === 'pending') && !syncing) {
+      syncOfflineScans();
+    }
+  }, [isOnline, offlineQueue, syncing, syncOfflineScans]);
 
   const clearSyncedScans = async () => {
     const remaining = offlineQueue.filter(s => s.syncStatus === 'pending');
@@ -487,10 +503,20 @@ export default function ScanPage() {
   return (
     <div className="scanner-container">
       <div className="page-header">
-        <h1>
-          <ScanIcon size={28} color="var(--color-primary-400)" />
-          {' '}QR Check-In Scanner
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+          <h1>
+            <ScanIcon size={28} color="var(--color-primary-400)" />
+            {' '}QR Check-In Scanner
+          </h1>
+          {/* Automatic Connection Status Badge */}
+          <span
+            className={`badge ${isOnline ? 'badge-success' : 'badge-warning'}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem' }}
+          >
+            {isOnline ? <CheckCircleIcon size={12} /> : <WifiOffIcon size={12} />}
+            {isOnline ? 'Online (Connected)' : 'Offline (Local)'}
+          </span>
+        </div>
         <p>Scan attendee QR codes or enter auth codes to check in</p>
       </div>
 
@@ -571,7 +597,7 @@ export default function ScanPage() {
         </button>
       </div>
 
-      {/* Live Camera Viewport (Always in DOM to avoid initialization errors) */}
+      {/* Live Camera Viewport */}
       <div style={{ display: scanMethod === 'camera' ? 'block' : 'none' }}>
         {cameras.length > 1 && (
           <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
@@ -627,7 +653,7 @@ export default function ScanPage() {
         </div>
       </div>
 
-      {/* Manual Code Input Method (Email/Reg No + Auth Code) */}
+      {/* Manual Code Input Method */}
       {scanMethod === 'manual' && (
         <form onSubmit={handleManualSubmit} className="card" style={{ padding: 'var(--space-lg)' }}>
           <h3 style={{ marginBottom: 'var(--space-xs)' }}>Manual Check-In</h3>
@@ -685,7 +711,8 @@ export default function ScanPage() {
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={syncOfflineScans}
-                  disabled={syncing}
+                  disabled={syncing || !isOnline}
+                  title={!isOnline ? 'Will automatically sync when reconnected' : 'Sync pending scans to server'}
                 >
                   {syncing ? (
                     <>

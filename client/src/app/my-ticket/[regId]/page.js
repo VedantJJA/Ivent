@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet } from '@/lib/api';
-import { TicketIcon, ClockIcon, ShieldIcon, LoaderIcon, CheckCircleIcon } from '@/components/Icons';
+import { TicketIcon, ClockIcon, LoaderIcon, CheckCircleIcon } from '@/components/Icons';
 
 // RFC 4648 Base32 Decoder
 function base32Decode(base32) {
@@ -92,23 +92,48 @@ export default function MyTicketPage() {
     });
   }, []);
 
-  // Fetch TOTP secret and ticket details
+  // Fetch TOTP secret and ticket details with offline local caching
   useEffect(() => {
     if (!user) return;
+
+    let hasCachedSecret = false;
+    try {
+      const cached = localStorage.getItem(`ivent_ticket_${regId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.secret) {
+          setSecret(parsed.secret);
+          setTicketMeta(parsed.ticketMeta);
+          hasCachedSecret = true;
+          setLoading(false);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     apiGet(`/registrations/${regId}/secret`)
       .then((data) => {
         setSecret(data.secret);
-        setTicketMeta({
+        const meta = {
           eventName: data.eventName,
           email: data.email,
           regNumber: data.regNumber,
-        });
+        };
+        setTicketMeta(meta);
+        try {
+          localStorage.setItem(`ivent_ticket_${regId}`, JSON.stringify({ secret: data.secret, ticketMeta: meta }));
+        } catch {
+          // ignore
+        }
       })
       .catch((err) => {
         if (err.message.includes('checked')) {
           setCheckedIn(true);
         }
-        setError(err.message);
+        if (!hasCachedSecret) {
+          setError(err.message);
+        }
       })
       .finally(() => setLoading(false));
   }, [regId, user]);
@@ -153,7 +178,7 @@ export default function MyTicketPage() {
     };
   }, [secret, updateTicket]);
 
-  if (authLoading || !user || loading) {
+  if (authLoading || (!user && !secret) || (loading && !secret)) {
     return (
       <div className="loading-container">
         <LoaderIcon size={24} />
@@ -174,7 +199,7 @@ export default function MyTicketPage() {
     );
   }
 
-  if (error) {
+  if (error && !secret) {
     return (
       <div className="ticket-container">
         <div className="ticket-card">
@@ -196,7 +221,7 @@ export default function MyTicketPage() {
       <div className="ticket-card">
         <TicketIcon size={32} color="var(--color-primary-400)" />
         <h1>{ticketMeta?.eventName || 'Your Event Ticket'}</h1>
-        <p>Show this rotating QR code at the venue entrance for check-in</p>
+        <p>Show this QR code at the venue entrance for check-in</p>
 
         {/* Registration Number / Attendee Badge */}
         {regNumToDisplay && (

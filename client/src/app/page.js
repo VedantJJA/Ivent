@@ -17,9 +17,33 @@ export default function HomePage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Load from local storage cache first for instant offline rendering
+    try {
+      const cached = localStorage.getItem('ivent_cached_events');
+      if (cached) {
+        setEvents(JSON.parse(cached));
+        setLoading(false);
+      }
+    } catch {
+      // ignore
+    }
+
     apiGet('/events')
-      .then((data) => setEvents(data.events))
-      .catch((err) => setError(err.message))
+      .then((data) => {
+        setEvents(data.events || []);
+        try {
+          localStorage.setItem('ivent_cached_events', JSON.stringify(data.events || []));
+        } catch {
+          // ignore
+        }
+      })
+      .catch((err) => {
+        // If we already loaded cached events, don't show error screen
+        const cached = localStorage.getItem('ivent_cached_events');
+        if (!cached) {
+          setError(err.message);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 

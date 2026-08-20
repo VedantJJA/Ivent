@@ -20,9 +20,32 @@ export default function MyRegistrationsPage() {
       return;
     }
     if (user) {
+      // Load from local storage cache first
+      try {
+        const cached = localStorage.getItem('ivent_cached_my_registrations');
+        if (cached) {
+          setRegistrations(JSON.parse(cached));
+          setLoading(false);
+        }
+      } catch {
+        // ignore
+      }
+
       apiGet('/registrations/my')
-        .then((data) => setRegistrations(data.registrations))
-        .catch((err) => setError(err.message))
+        .then((data) => {
+          setRegistrations(data.registrations || []);
+          try {
+            localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(data.registrations || []));
+          } catch {
+            // ignore
+          }
+        })
+        .catch((err) => {
+          const cached = localStorage.getItem('ivent_cached_my_registrations');
+          if (!cached) {
+            setError(err.message);
+          }
+        })
         .finally(() => setLoading(false));
     }
   }, [user, authLoading, router]);
