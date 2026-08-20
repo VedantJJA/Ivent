@@ -16,6 +16,7 @@ router.post('/:id/checkin', requireAuth, requireOrganizer, async (req, res) => {
     const io = req.app.get('io');
     const result = await checkIn({
       registrationId,
+      eventId: req.params.id,
       totpCode,
       stationId,
       clientScanId,
@@ -24,7 +25,7 @@ router.post('/:id/checkin', requireAuth, requireOrganizer, async (req, res) => {
     });
 
     if (result.status === 'not_found') {
-      return res.status(404).json({ error: 'Registration not found' });
+      return res.status(404).json({ error: 'Registration not found for this event' });
     }
 
     res.json(result);
@@ -47,7 +48,7 @@ router.post('/:id/checkin/sync-batch', requireAuth, requireOrganizer, async (req
 
     for (const scan of scans) {
       try {
-        const result = await syncOfflineScan(scan, io);
+        const result = await syncOfflineScan({ ...scan, eventId: req.params.id }, io);
         results.push({ clientScanId: scan.clientScanId, registrationId: scan.registrationId, ...result });
       } catch (err) {
         results.push({ clientScanId: scan.clientScanId, registrationId: scan.registrationId, status: 'error', message: err.message });

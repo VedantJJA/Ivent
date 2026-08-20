@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   ScanIcon, CheckCircleIcon, XCircleIcon, WifiOffIcon,
-  LoaderIcon, QrCodeIcon, UploadIcon, KeyIcon
+  LoaderIcon, QrCodeIcon, KeyIcon
 } from '@/components/Icons';
 
 export default function ScanPage() {
@@ -16,20 +16,19 @@ export default function ScanPage() {
   const [mode, setMode] = useState('online');
   const [scanResult, setScanResult] = useState(null);
   const [scanning, setScanning] = useState(false);
-  const [scannerReady, setScannerReady] = useState(false);
+  const [startingCamera, setStartingCamera] = useState(false);
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
   const [error, setError] = useState(null);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState(null);
-  const [knownScannedIds, setKnownScannedIds] = useState(new Set());
-  const [manualRegId, setManualRegId] = useState('');
+  const [knownScannedIdentifiers, setKnownScannedIdentifiers] = useState(new Set());
+  const [manualIdentifier, setManualIdentifier] = useState('');
   const [manualTotp, setManualTotp] = useState('');
-  const [scanMethod, setScanMethod] = useState('camera'); // 'camera' | 'upload' | 'manual'
+  const [scanMethod, setScanMethod] = useState('camera'); // 'camera' | 'manual'
   const html5QrRef = useRef(null);
   const stationId = useRef(`station-${Math.random().toString(36).substring(2, 8)}`);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -40,7 +39,6 @@ export default function ScanPage() {
   // Load existing offline queue from IndexedDB and fetch online event roster on startup
   useEffect(() => {
     async function loadData() {
-      // 1. Load IndexedDB cached scans
       try {
         if (typeof window !== 'undefined' && 'indexedDB' in window) {
           const { openDB } = await import('idb');
@@ -55,25 +53,33 @@ export default function ScanPage() {
           const allScans = await db.getAll('scan_outbox');
           if (allScans && allScans.length > 0) {
             setOfflineQueue(allScans);
-            const scannedIds = new Set(allScans.map(s => s.registrationId));
-            setKnownScannedIds(prev => new Set([...prev, ...scannedIds]));
+            const identifiers = new Set();
+            allScans.forEach(s => {
+              if (s.registrationId) identifiers.add(s.registrationId.toLowerCase());
+            });
+            setKnownScannedIdentifiers(prev => new Set([...prev, ...identifiers]));
           }
         }
       } catch (err) {
         console.error('Error loading IndexedDB:', err);
       }
 
-      // 2. Fetch already checked in registrations from server to detect online check-ins locally
+      // Fetch already checked in registrations from server
       try {
         const dashboardData = await apiGet(`/events/${id}/dashboard`);
         if (dashboardData?.registrations) {
-          const checkedIn = dashboardData.registrations
+          const checkedIn = new Set();
+          dashboardData.registrations
             .filter(r => r.checked_in_at)
-            .map(r => r.id);
-          setKnownScannedIds(prev => new Set([...prev, ...checkedIn]));
+            .forEach(r => {
+              if (r.id) checkedIn.add(r.id.toLowerCase());
+              if (r.email) checkedIn.add(r.email.toLowerCase());
+              if (r.reg_number) checkedIn.add(r.reg_number.toLowerCase());
+            });
+          setKnownScannedIdentifiers(prev => new Set([...prev, ...checkedIn]));
         }
       } catch {
-        // May be offline initially, continue with local storage
+        // Continue with local storage if offline
       }
     }
 
@@ -82,93 +88,76 @@ export default function ScanPage() {
     }
   }, [id, user]);
 
-  // Enumerate cameras and initialize QR scanner module
+  // Query cameras when camera tab is active
   useEffect(() => {
-    let isMounted = true;
-
-    async function initScanner() {
+    let active = true;
+    async function checkCameras() {
+      if (typeof window === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
       try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-
-        if (!isMounted) return;
-
-        // Create scanner instance attached to #qr-reader
-        const scanner = new Html5Qrcode('qr-reader');
-        html5QrRef.current = scanner;
-        setScannerReady(true);
-
-        // Check for cameras
-        try {
-          const devices = await Html5Qrcode.getCameras();
-          if (isMounted && devices && devices.length > 0) {
-            setCameras(devices);
-            // Default to rear camera if present, or first camera
-            const backCamera = devices.find(d =>
-              d.label.toLowerCase().includes('back') ||
-              d.label.toLowerCase().includes('rear') ||
-              d.label.toLowerCase().includes('environment')
-            );
-            setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
-          }
-        } catch {
-          // Camera listing might require permission prompt first
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        if (active && videoDevices.length > 0) {
+          setCameras(videoDevices.map((d, i) => ({
+            id: d.deviceId,
+            label: d.label || `Camera ${i + 1}`,
+          })));
         }
-      } catch (err) {
-        console.error('Failed to load html5-qrcode:', err);
-        if (isMounted) {
-          setError('Failed to load scanner library. You can still use manual ticket code entry.');
-        }
+      } catch {
+        // Enumerate might require camera stream first
       }
     }
+    checkCameras();
+    return () => { active = false; };
+  }, [scanMethod]);
 
-    initScanner();
-
-    return () => {
-      isMounted = false;
-      if (html5QrRef.current) {
-        html5QrRef.current.stop().catch(() => {});
+  const stopScanning = useCallback(async () => {
+    if (html5QrRef.current) {
+      try {
+        if (html5QrRef.current.isScanning) {
+          await html5QrRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Stop scanning warning:', err);
       }
-    };
+    }
+    setScanning(false);
+    setStartingCamera(false);
   }, []);
 
   const startScanning = useCallback(async () => {
-    if (!html5QrRef.current || scanning) return;
+    if (scanning || startingCamera) return;
     setError(null);
     setScanResult(null);
+    setStartingCamera(true);
 
-    // Verify browser supports mediaDevices
     if (typeof window !== 'undefined' && !navigator.mediaDevices?.getUserMedia) {
-      setError('Camera access is not supported on this browser or insecure HTTP connection. Use HTTPS or Manual Entry.');
+      setError('Camera access is not supported on this browser or connection is not secure (requires HTTPS or localhost). Please use Manual Entry.');
+      setStartingCamera(false);
       return;
     }
 
     try {
-      // 1. Explicitly request camera permissions if not already granted
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: selectedCameraId ? { deviceId: { exact: selectedCameraId } } : { facingMode: { ideal: 'environment' } }
-        });
-        // Stop stream immediately since Html5Qrcode will manage its own stream
-        stream.getTracks().forEach(t => t.stop());
+      const { Html5Qrcode } = await import('html5-qrcode');
 
-        // Refresh camera list after permission granted
-        const { Html5Qrcode } = await import('html5-qrcode');
-        const devices = await Html5Qrcode.getCameras();
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-          if (!selectedCameraId) {
-            const backCamera = devices.find(d =>
-              d.label.toLowerCase().includes('back') ||
-              d.label.toLowerCase().includes('rear')
-            );
-            setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+      // Stop any prior instance
+      if (html5QrRef.current) {
+        try {
+          if (html5QrRef.current.isScanning) {
+            await html5QrRef.current.stop();
           }
+        } catch {
+          // ignore
         }
-      } catch (permErr) {
-        console.warn('Initial permission check:', permErr);
       }
 
-      setScanning(true);
+      // Ensure qr-reader container exists
+      const container = document.getElementById('qr-reader');
+      if (!container) {
+        throw new Error('Scanner container not ready. Please try again.');
+      }
+
+      const qrScanner = new Html5Qrcode('qr-reader');
+      html5QrRef.current = qrScanner;
 
       const qrConfig = {
         fps: 10,
@@ -180,90 +169,89 @@ export default function ScanPage() {
         handleScan(decodedText);
       };
 
-      // Strategy 1: Use specific cameraId if selected
+      // Try camera launch
       if (selectedCameraId) {
         try {
-          await html5QrRef.current.start(selectedCameraId, qrConfig, scanCallback, () => {});
+          await qrScanner.start(selectedCameraId, qrConfig, scanCallback, () => {});
+          setScanning(true);
+          setStartingCamera(false);
           return;
         } catch (camErr) {
-          console.warn('Start with cameraId failed, trying fallback:', camErr);
+          console.warn('Selected camera start failed, trying ideal environment:', camErr);
         }
       }
 
-      // Strategy 2: Use ideal environment facingMode
       try {
-        await html5QrRef.current.start({ facingMode: { ideal: 'environment' } }, qrConfig, scanCallback, () => {});
+        await qrScanner.start({ facingMode: { ideal: 'environment' } }, qrConfig, scanCallback, () => {});
+        setScanning(true);
+        setStartingCamera(false);
         return;
       } catch (envErr) {
-        console.warn('Start with facingMode environment failed, trying user facing:', envErr);
+        console.warn('Environment camera failed, trying user camera:', envErr);
       }
 
-      // Strategy 3: Use user facingMode (standard front webcam)
-      await html5QrRef.current.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
+      await qrScanner.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
+      setScanning(true);
+      setStartingCamera(false);
 
     } catch (err) {
-      console.error('Camera start error:', err);
+      console.error('Camera launch error:', err);
       setScanning(false);
+      setStartingCamera(false);
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera permission denied. Please click the camera/lock icon in your browser address bar and select "Allow".');
+        setError('Camera permission was blocked. Please tap the camera/lock icon in your browser address bar and choose "Allow".');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setError('No camera was detected on this device. You can use File Upload or Manual Ticket Entry.');
+        setError('No camera was detected on this device. You can use Manual Entry below.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera is in use by another application. Please close other camera tabs/apps and try again.');
+        setError('Camera is currently in use by another app or browser tab. Please close other camera tabs and try again.');
       } else {
-        setError(`Camera error: ${err.message || 'Could not start camera. Try manual entry or file upload.'}`);
+        setError(err.message || 'Could not start camera. Please use Manual Entry.');
       }
     }
-  }, [scanning, selectedCameraId]);
+  }, [scanning, startingCamera, selectedCameraId]);
 
-  const stopScanning = useCallback(async () => {
-    if (!html5QrRef.current) return;
-    try {
-      if (scanning) {
-        await html5QrRef.current.stop();
+  // Clean up scanner on unmount or tab switch
+  useEffect(() => {
+    return () => {
+      if (html5QrRef.current) {
+        try {
+          if (html5QrRef.current.isScanning) {
+            html5QrRef.current.stop().catch(() => {});
+          }
+        } catch {
+          // ignore
+        }
       }
-    } catch (err) {
-      console.warn('Stop scanning warning:', err);
-    }
-    setScanning(false);
-  }, [scanning]);
-
-  // Handle uploaded QR image file
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !html5QrRef.current) return;
-
-    setError(null);
-    setScanResult(null);
-
-    try {
-      const decodedText = await html5QrRef.current.scanFile(file, true);
-      handleScan(decodedText);
-    } catch (err) {
-      setScanResult({
-        status: 'error',
-        message: 'Could not detect a valid QR code in the uploaded image. Please try another image.',
-      });
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
+    };
+  }, [scanMethod]);
 
   const handleScan = async (decodedText) => {
-    // Parse QR payload: REG_<registrationId>.<totpCode>
-    const match = decodedText.trim().match(/^REG_([a-f0-9-]+)\.(\d{6})$/i);
-    if (!match) {
+    let registrationId = '';
+    let totpCode = '';
+
+    // Check if format is REG_<identifier>.<6-digit-code>
+    const match = decodedText.trim().match(/^REG_([a-zA-Z0-9@._-]+)\.(\d{6})$/i);
+    if (match) {
+      registrationId = match[1];
+      totpCode = match[2];
+    } else {
+      // If user provided single text with dot
+      const dotIndex = decodedText.lastIndexOf('.');
+      if (dotIndex > 0) {
+        registrationId = decodedText.substring(0, dotIndex).replace(/^REG_/i, '').trim();
+        totpCode = decodedText.substring(dotIndex + 1).trim();
+      }
+    }
+
+    if (!registrationId || !totpCode || !/^\d{6}$/.test(totpCode)) {
       setScanResult({
         status: 'error',
-        message: `Invalid QR format: "${decodedText.slice(0, 40)}". Must be REG_<id>.<6-digit-code>.`,
+        message: `Invalid QR code payload: "${decodedText.slice(0, 30)}". Format must be REG_<identifier>.<6-digit-auth-code>.`,
       });
       return;
     }
 
-    const [, registrationId, totpCode] = match;
     const clientScanId = crypto.randomUUID();
     const deviceTimestamp = new Date().toISOString();
 
@@ -278,7 +266,7 @@ export default function ScanPage() {
         });
 
         if (result.status === 'accepted') {
-          setKnownScannedIds(prev => new Set([...prev, registrationId]));
+          setKnownScannedIdentifiers(prev => new Set([...prev, registrationId.toLowerCase()]));
         }
 
         setScanResult(result);
@@ -290,17 +278,17 @@ export default function ScanPage() {
       }
     } else {
       // Offline mode: Check for duplicate scan locally first
-      const isLocalDuplicate = knownScannedIds.has(registrationId);
+      const isLocalDuplicate = knownScannedIdentifiers.has(registrationId.toLowerCase());
 
       if (isLocalDuplicate) {
-        const existingScan = offlineQueue.find(s => s.registrationId === registrationId);
+        const existingScan = offlineQueue.find(s => s.registrationId.toLowerCase() === registrationId.toLowerCase());
         const timeStr = existingScan
           ? `(First scanned locally at ${new Date(existingScan.deviceTimestamp).toLocaleTimeString()})`
           : '(Already checked in previously)';
 
         setScanResult({
           status: 'rejected_duplicate',
-          message: `DUPLICATE (Offline): Ticket already scanned! ${timeStr}`,
+          message: `DUPLICATE (Offline): Attendee already scanned! ${timeStr}`,
         });
 
         const duplicateScan = {
@@ -329,7 +317,7 @@ export default function ScanPage() {
         localResult: 'accepted_locally',
       };
 
-      setKnownScannedIds(prev => new Set([...prev, registrationId]));
+      setKnownScannedIdentifiers(prev => new Set([...prev, registrationId.toLowerCase()]));
       setOfflineQueue(prev => [...prev, scan]);
       saveToIndexedDB(scan);
 
@@ -342,24 +330,24 @@ export default function ScanPage() {
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    let regId = manualRegId.trim();
+    let identifier = manualIdentifier.trim();
     let totp = manualTotp.trim().replace(/\s+/g, '');
 
-    // Allow user pasting full REG_<id>.<totp> into either field
-    if (regId.startsWith('REG_') && regId.includes('.')) {
-      const match = regId.match(/^REG_([a-f0-9-]+)\.(\d{6})$/i);
+    // Allow user pasting full REG_<id>.<totp> into identifier field
+    if (identifier.startsWith('REG_') && identifier.includes('.')) {
+      const match = identifier.match(/^REG_([a-zA-Z0-9@._-]+)\.(\d{6})$/i);
       if (match) {
-        regId = match[1];
+        identifier = match[1];
         totp = match[2];
       }
     }
 
-    regId = regId.replace(/^REG_/i, '');
+    identifier = identifier.replace(/^REG_/i, '');
 
-    if (!regId) {
+    if (!identifier) {
       setScanResult({
         status: 'error',
-        message: 'Please enter a valid Registration ID / Number.',
+        message: 'Please enter an Email Address, Registration Number, or Ticket ID.',
       });
       return;
     }
@@ -367,12 +355,13 @@ export default function ScanPage() {
     if (!totp || !/^\d{6}$/.test(totp)) {
       setScanResult({
         status: 'error',
-        message: 'Please enter a valid 6-digit Auth Code (numeric only).',
+        message: 'Please enter the valid 6-digit Auth Code from attendee ticket.',
       });
       return;
     }
 
-    handleScan(`REG_${regId}.${totp}`);
+    // Combine into standard format and process
+    handleScan(`REG_${identifier}.${totp}`);
     setManualTotp('');
   };
 
@@ -502,7 +491,7 @@ export default function ScanPage() {
           <ScanIcon size={28} color="var(--color-primary-400)" />
           {' '}QR Check-In Scanner
         </h1>
-        <p>Scan attendee QR codes to check them into this event</p>
+        <p>Scan attendee QR codes or enter auth codes to check in</p>
       </div>
 
       {/* Online / Offline Mode Toggle */}
@@ -533,7 +522,7 @@ export default function ScanPage() {
         <div className="alert alert-error" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div>{error}</div>
           <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-            Tip: You can switch to <strong>Upload Image</strong> or <strong>Manual Entry</strong> below if camera permissions are blocked.
+            Tip: You can use the <strong>Manual Entry</strong> tab to check in attendees with their Email or Registration Number.
           </div>
         </div>
       )}
@@ -573,130 +562,103 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* Scan Method Selection Tabs */}
+      {/* Scan Method Selection Tabs (Camera & Manual Entry) */}
       <div style={{ display: 'flex', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)', background: 'var(--color-bg-secondary)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
         <button
           className="btn btn-sm"
           style={{ flex: 1, background: scanMethod === 'camera' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'camera' ? '#fff' : 'var(--color-text-secondary)' }}
-          onClick={() => { setScanMethod('camera'); stopScanning(); }}
+          onClick={() => { setScanMethod('camera'); }}
         >
-          <ScanIcon size={14} /> Live Camera
-        </button>
-        <button
-          className="btn btn-sm"
-          style={{ flex: 1, background: scanMethod === 'upload' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'upload' ? '#fff' : 'var(--color-text-secondary)' }}
-          onClick={() => { setScanMethod('upload'); stopScanning(); }}
-        >
-          <UploadIcon size={14} /> Upload Image
+          <ScanIcon size={14} /> Live Camera Scanner
         </button>
         <button
           className="btn btn-sm"
           style={{ flex: 1, background: scanMethod === 'manual' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'manual' ? '#fff' : 'var(--color-text-secondary)' }}
           onClick={() => { setScanMethod('manual'); stopScanning(); }}
         >
-          <KeyIcon size={14} /> Manual Entry
+          <KeyIcon size={14} /> Manual Entry (Email / Reg No)
         </button>
       </div>
 
-      {/* Camera Selection Dropdown if multiple cameras detected */}
-      {scanMethod === 'camera' && cameras.length > 1 && (
-        <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
-          <label className="form-label" style={{ fontSize: '0.8rem' }}>Select Camera Source</label>
-          <select
-            className="form-select"
-            value={selectedCameraId}
-            onChange={(e) => {
-              setSelectedCameraId(e.target.value);
-              if (scanning) {
-                stopScanning().then(startScanning);
-              }
-            }}
-          >
-            {cameras.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label || `Camera ${c.id.slice(0, 8)}...`}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Live Camera Viewport */}
-      {scanMethod === 'camera' && (
-        <>
-          <div className="scanner-viewport">
-            <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+      {/* Live Camera Viewport (Always in DOM to avoid initialization errors) */}
+      <div style={{ display: scanMethod === 'camera' ? 'block' : 'none' }}>
+        {cameras.length > 1 && (
+          <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Select Camera Source</label>
+            <select
+              className="form-select"
+              value={selectedCameraId}
+              onChange={(e) => {
+                setSelectedCameraId(e.target.value);
+                if (scanning) {
+                  stopScanning().then(startScanning);
+                }
+              }}
+            >
+              {cameras.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </div>
+        )}
 
-          <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
-            {!scanning ? (
-              <button
-                className="btn btn-primary btn-full btn-lg"
-                onClick={startScanning}
-                disabled={!scannerReady}
-              >
-                <ScanIcon size={18} />
-                Start Camera Scan
-              </button>
-            ) : (
-              <button
-                className="btn btn-danger btn-full btn-lg"
-                onClick={stopScanning}
-              >
-                Stop Camera
-              </button>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Upload Image Method */}
-      {scanMethod === 'upload' && (
-        <div className="card" style={{ textAlign: 'center', padding: 'var(--space-xl)' }}>
-          <UploadIcon size={40} color="var(--color-primary-400)" />
-          <h3 style={{ marginTop: 'var(--space-md)' }}>Scan from Ticket Image or Photo</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)' }}>
-            Upload a screenshot or photo of an attendee ticket QR code
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handleFileUpload}
-            style={{ display: 'none' }}
-            id="qr-file-upload"
-          />
-          <label htmlFor="qr-file-upload" className="btn btn-primary btn-lg" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <UploadIcon size={18} />
-            Choose Photo / Take Picture
-          </label>
+        <div className="scanner-viewport">
+          <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
         </div>
-      )}
 
-      {/* Manual Code Input Method */}
+        <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
+          {!scanning ? (
+            <button
+              className="btn btn-primary btn-full btn-lg"
+              onClick={startScanning}
+              disabled={startingCamera}
+            >
+              {startingCamera ? (
+                <>
+                  <LoaderIcon size={18} /> Starting Camera...
+                </>
+              ) : (
+                <>
+                  <ScanIcon size={18} /> Start Camera Scan
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              className="btn btn-danger btn-full btn-lg"
+              onClick={stopScanning}
+            >
+              Stop Camera
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Manual Code Input Method (Email/Reg No + Auth Code) */}
       {scanMethod === 'manual' && (
         <form onSubmit={handleManualSubmit} className="card" style={{ padding: 'var(--space-lg)' }}>
-          <h3 style={{ marginBottom: 'var(--space-xs)' }}>Manual Ticket Check-In</h3>
+          <h3 style={{ marginBottom: 'var(--space-xs)' }}>Manual Check-In</h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>
-            Enter the Attendee Registration ID and the rotating 6-digit Auth Code from their ticket
+            Enter the attendee Email Address or Registration Number and their rotating 6-digit Auth Code
           </p>
 
           <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-            <label className="form-label">Registration No. / ID</label>
+            <label className="form-label">Attendee Email or Registration Number / ID</label>
             <input
               type="text"
               className="form-input"
-              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
-              value={manualRegId}
-              onChange={(e) => setManualRegId(e.target.value)}
+              placeholder="e.g. attendee@example.com or 21BCE1001"
+              value={manualIdentifier}
+              onChange={(e) => setManualIdentifier(e.target.value)}
               autoFocus
               required
             />
           </div>
 
           <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
-            <label className="form-label">6-Digit Auth Code (TOTP)</label>
+            <label className="form-label">6-Digit Auth Code (from Ticket)</label>
             <input
               type="text"
               className="form-input"
@@ -704,7 +666,7 @@ export default function ScanPage() {
               maxLength={6}
               value={manualTotp}
               onChange={(e) => setManualTotp(e.target.value.replace(/\D/g, ''))}
-              style={{ fontSize: '1.2rem', letterSpacing: '2px', fontWeight: 600 }}
+              style={{ fontSize: '1.3rem', letterSpacing: '3px', fontWeight: 700 }}
               required
             />
           </div>
@@ -712,9 +674,9 @@ export default function ScanPage() {
           <button
             type="submit"
             className="btn btn-primary btn-full btn-lg"
-            disabled={!manualRegId.trim() || !manualTotp.trim()}
+            disabled={!manualIdentifier.trim() || !manualTotp.trim()}
           >
-            Process Manual Check-In
+            Verify and Check In
           </button>
         </form>
       )}
@@ -760,7 +722,7 @@ export default function ScanPage() {
             <table className="table" style={{ fontSize: '0.8rem' }}>
               <thead>
                 <tr>
-                  <th>Ticket</th>
+                  <th>Attendee / Ticket</th>
                   <th>Scan Time</th>
                   <th>Status</th>
                 </tr>
@@ -769,7 +731,7 @@ export default function ScanPage() {
                 {offlineQueue.slice().reverse().map((scan) => (
                   <tr key={scan.clientScanId}>
                     <td style={{ fontFamily: 'monospace' }}>
-                      {scan.registrationId.slice(0, 8)}...
+                      {scan.registrationId}
                     </td>
                     <td>{new Date(scan.deviceTimestamp).toLocaleTimeString()}</td>
                     <td>

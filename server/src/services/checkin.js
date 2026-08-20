@@ -21,35 +21,48 @@ async function logScan(registrationId, stationId, clientScanId, deviceTimestamp,
   }
 }
 
-// Atomic check-in with duplicate prevention -- supports lookup by registration UUID or user reg_number
-async function checkIn({ registrationId, totpCode, stationId, clientScanId, deviceTimestamp, io }) {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationId);
+// Atomic check-in with duplicate prevention -- supports lookup by:
+// 1. Registration UUID
+// 2. Attendee Email (for the specific event)
+// 3. Attendee Registration Number (for the specific event)
+async function checkIn({ registrationId, eventId, totpCode, stationId, clientScanId, deviceTimestamp, io }) {
+  const cleanIdentifier = (registrationId || '').trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanIdentifier);
 
   let reg;
   if (isUuid) {
     reg = await db.query(
       'SELECT id, totp_secret, checked_in_at, event_id FROM registrations WHERE id = $1',
-      [registrationId]
+      [cleanIdentifier]
     );
-  } else {
-    // Lookup by user's registration number
+  }
+
+  // If not found by registration UUID, look up by attendee email OR attendee reg_number
+  if (!reg || !reg.rows[0]) {
+    const params = eventId ? [cleanIdentifier.toLowerCase(), eventId] : [cleanIdentifier.toLowerCase()];
+    const eventFilter = eventId ? 'AND r.event_id = $2' : '';
+
     reg = await db.query(
       `SELECT r.id, r.totp_secret, r.checked_in_at, r.event_id
        FROM registrations r
        JOIN users u ON u.id = r.user_id
-       WHERE LOWER(u.reg_number) = LOWER($1)`,
-      [registrationId]
+       WHERE (LOWER(u.email) = $1 OR (u.reg_number IS NOT NULL AND LOWER(u.reg_number) = $1))
+       ${eventFilter}
+       ORDER BY r.created_at DESC
+       LIMIT 1`,
+      params
     );
   }
 
-  if (!reg.rows[0]) {
+  if (!reg || !reg.rows[0]) {
     return { status: 'not_found' };
   }
 
-  const { id: actualRegistrationId, totp_secret, event_id } = reg.rows[0];
+  const { id: actualRegistrationId, totp_secret, event_id: targetEventId } = reg.rows[0];
 
   // Verify TOTP code (current step +/- 1 for clock drift tolerance)
-  const isValid = authenticator.check(totpCode, totp_secret);
+  const cleanTotp = (totpCode || '').toString().trim().replace(/\s+/g, '');
+  const isValid = authenticator.check(cleanTotp, totp_secret);
   if (!isValid) {
     await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'rejected_invalid_totp');
     return { status: 'rejected_invalid_totp' };
@@ -81,7 +94,7 @@ async function checkIn({ registrationId, totpCode, stationId, clientScanId, devi
 
   // Push real-time update via Socket.io
   if (io) {
-    io.to(`event:${event_id}`).emit('checkin', {
+    io.to(`event:${targetEventId}`).emit('checkin', {
       registrationId: actualRegistrationId,
       checkedInAt: rows[0].checked_in_at,
     });
