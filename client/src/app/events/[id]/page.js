@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   CalendarIcon, UsersIcon, MapPinIcon, TicketIcon, CheckCircleIcon,
-  BarChartIcon, ScanIcon, LoaderIcon
+  BarChartIcon, ScanIcon, LoaderIcon, ShieldIcon
 } from '@/components/Icons';
 
 export default function EventDetailPage() {
@@ -19,6 +19,7 @@ export default function EventDetailPage() {
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
   const [regSuccess, setRegSuccess] = useState(false);
 
@@ -54,6 +55,29 @@ export default function EventDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete "${event.name}"? This will remove all registrations and scans.`)) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/events/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ivent_token')}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete event');
+      router.push(user?.is_admin ? '/admin' : '/');
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading-container">
@@ -71,6 +95,7 @@ export default function EventDetailPage() {
     );
   }
 
+  const isAdmin = !!user?.is_admin;
   const eventDate = new Date(event.event_date);
   const isPast = eventDate < new Date();
   const isFull = event.registered_count >= event.capacity;
@@ -97,6 +122,9 @@ export default function EventDetailPage() {
     <div className="event-detail">
       <div className="event-detail-header">
         <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+          {event.club_name && (
+            <span className="badge badge-primary">{event.club_name}</span>
+          )}
           {isPast ? (
             <span className="badge badge-muted">Past Event</span>
           ) : isFull ? (
@@ -104,7 +132,11 @@ export default function EventDetailPage() {
           ) : (
             <span className="badge badge-success">Open for Registration</span>
           )}
-          {isOrganizer && <span className="badge badge-primary">Organizer</span>}
+          {isAdmin ? (
+            <span className="badge badge-primary">Developer / Admin</span>
+          ) : isOrganizer ? (
+            <span className="badge badge-success">Organizer</span>
+          ) : null}
           {registration && <span className="badge badge-success">Registered</span>}
         </div>
 
@@ -162,7 +194,8 @@ export default function EventDetailPage() {
       )}
 
       <div className="event-detail-actions">
-        {!registration && !isPast && !isFull && (
+        {/* Registration is only for non-admin users */}
+        {!isAdmin && !registration && !isPast && !isFull && (
           <button
             className="btn btn-primary btn-lg"
             onClick={handleRegister}
@@ -189,7 +222,8 @@ export default function EventDetailPage() {
           </Link>
         )}
 
-        {isOrganizer && (
+        {/* Organizer / Admin tools */}
+        {isOrganizer && !isAdmin && (
           <>
             <Link href={`/events/${id}/dashboard`} className="btn btn-secondary btn-lg">
               <BarChartIcon size={18} />
@@ -199,6 +233,23 @@ export default function EventDetailPage() {
               <ScanIcon size={18} />
               Scan QR Codes
             </Link>
+          </>
+        )}
+
+        {isAdmin && (
+          <>
+            <Link href={`/events/${id}/dashboard`} className="btn btn-secondary btn-lg">
+              <BarChartIcon size={18} />
+              Live Stats
+            </Link>
+            <button
+              type="button"
+              className="btn btn-danger btn-lg"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? <LoaderIcon size={18} /> : 'Delete Event'}
+            </button>
           </>
         )}
       </div>

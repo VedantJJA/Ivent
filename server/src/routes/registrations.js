@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, isAdminEmail } = require('../middleware/auth');
 const { registerForEvent, EventFullError, AlreadyRegisteredError } = require('../services/registration');
 
 const router = express.Router();
@@ -8,6 +8,10 @@ const router = express.Router();
 // POST /events/:id/register -- atomic capacity-checked registration
 router.post('/events/:id/register', requireAuth, async (req, res) => {
   try {
+    if (isAdminEmail(req.user.email)) {
+      return res.status(403).json({ error: 'System administrators and developers cannot register for events' });
+    }
+
     const registration = await registerForEvent(req.params.id, req.user.id);
     res.status(201).json({ registration });
   } catch (err) {

@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
+function isAdminEmail(email) {
+  if (!email || !process.env.ADMIN_EMAIL) return false;
+  const adminEmails = process.env.ADMIN_EMAIL.split(',').map(e => e.trim().toLowerCase());
+  return adminEmails.includes(email.trim().toLowerCase());
+}
+
 // Extract token from Authorization header or query parameter
 function extractToken(req) {
   const authHeader = req.headers.authorization;
@@ -22,6 +28,7 @@ function optionalAuth(req, res, next) {
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded.is_admin = isAdminEmail(decoded.email);
     req.user = decoded;
   } catch (err) {
     // Invalid token, proceed without user context
@@ -37,6 +44,7 @@ function requireAuth(req, res, next) {
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded.is_admin = isAdminEmail(decoded.email);
     req.user = decoded;
     next();
   } catch (err) {
@@ -44,36 +52,30 @@ function requireAuth(req, res, next) {
   }
 }
 
-// Admin check -- requires is_admin = true
-async function requireAdmin(req, res, next) {
-  try {
-    const result = await db.query('SELECT is_admin FROM users WHERE id = $1', [req.user.id]);
-    if (result.rows.length === 0 || !result.rows[0].is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    req.user.is_admin = true;
-    next();
-  } catch (err) {
-    console.error('Admin check error:', err);
-    return res.status(500).json({ error: 'Server error' });
+// Admin check -- strictly matches ADMIN_EMAIL configured in environment
+function requireAdmin(req, res, next) {
+  if (!req.user || !isAdminEmail(req.user.email)) {
+    return res.status(403).json({ error: 'Access restricted: Only the system administrator configured in environment variables has access' });
   }
+  req.user.is_admin = true;
+  next();
 }
 
-// Organizer check -- allows admin, direct event organizer, or any organizer in the event's club
+// Organizer check -- allows club organizers, direct event organizers, or dev admin
 async function requireOrganizer(req, res, next) {
   const eventId = req.params.id || req.params.eventId;
   if (!eventId) {
     return res.status(400).json({ error: 'Event ID required' });
   }
   try {
+    const isDevAdmin = isAdminEmail(req.user.email);
     const result = await db.query(
       `SELECT 1 
        FROM events e
        LEFT JOIN event_organizers eo ON eo.event_id = e.id AND eo.user_id = $2
        LEFT JOIN club_members cm ON cm.club_id = e.club_id AND cm.user_id = $2
-       JOIN users u ON u.id = $2
-       WHERE e.id = $1 AND (u.is_admin = TRUE OR eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL)`,
-      [eventId, req.user.id]
+       WHERE e.id = $1 AND (eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL OR $3 = TRUE)`,
+      [eventId, req.user.id, isDevAdmin]
     );
     if (result.rows.length === 0) {
       return res.status(403).json({ error: 'Organizer access required for this event or club' });
@@ -85,4 +87,4 @@ async function requireOrganizer(req, res, next) {
   }
 }
 
-module.exports = { optionalAuth, requireAuth, requireAdmin, requireOrganizer };
+module.exports = { optionalAuth, requireAuth, requireAdmin, requireOrganizer, isAdminEmail };

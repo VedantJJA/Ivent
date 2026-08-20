@@ -7,7 +7,7 @@ import { apiGet } from '@/lib/api';
 import EventCard from '@/components/EventCard';
 import {
   CalendarIcon, PlusIcon, ShieldIcon, QrCodeIcon, LoaderIcon,
-  TicketIcon, LogInIcon
+  TicketIcon, LogInIcon, UsersIcon
 } from '@/components/Icons';
 
 export default function HomePage() {
@@ -26,7 +26,8 @@ export default function HomePage() {
   const upcomingEvents = events.filter(e => new Date(e.event_date) >= new Date());
   const pastEvents = events.filter(e => new Date(e.event_date) < new Date());
 
-  const isOrganizerOrAdmin = user?.is_admin || (user?.clubs && user.clubs.length > 0);
+  const isAdmin = !!user?.is_admin;
+  const isOrganizer = !isAdmin && user?.clubs && user.clubs.length > 0;
 
   return (
     <>
@@ -41,11 +42,22 @@ export default function HomePage() {
         </p>
         <div className="hero-actions">
           {user ? (
-            isOrganizerOrAdmin ? (
-              <Link href="/events/create" className="btn btn-primary btn-lg">
-                <PlusIcon size={20} />
-                Create Event
+            isAdmin ? (
+              <Link href="/admin" className="btn btn-primary btn-lg">
+                <ShieldIcon size={20} />
+                Admin Panel
               </Link>
+            ) : isOrganizer ? (
+              <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <Link href="/events/create" className="btn btn-primary btn-lg">
+                  <PlusIcon size={20} />
+                  Create Event
+                </Link>
+                <Link href="/my-clubs" className="btn btn-secondary btn-lg">
+                  <UsersIcon size={20} />
+                  My Clubs
+                </Link>
+              </div>
             ) : (
               <Link href="/my-registrations" className="btn btn-primary btn-lg">
                 <TicketIcon size={20} />
@@ -74,14 +86,14 @@ export default function HomePage() {
             <CalendarIcon size={48} color="var(--color-text-muted)" />
             <h3>No Events Yet</h3>
             <p>
-              {isOrganizerOrAdmin
-                ? 'Be the first to create an event and start managing check-ins.'
+              {isOrganizer
+                ? 'Be the first to create an event for your club.'
                 : 'No events scheduled yet. Please check back later.'}
             </p>
-            {isOrganizerOrAdmin && (
+            {isOrganizer && (
               <Link href="/events/create" className="btn btn-primary">
                 <PlusIcon size={18} />
-                Create Your First Event
+                Create Event
               </Link>
             )}
           </div>

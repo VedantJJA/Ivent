@@ -2,12 +2,15 @@ const express = require('express');
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, isAdminEmail } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Helper to fetch user's club memberships
-async function getUserClubs(userId) {
+// Helper to fetch user's club memberships (admin is never part of clubs)
+async function getUserClubs(userId, email) {
+  if (isAdminEmail(email)) {
+    return [];
+  }
   const result = await db.query(
     `SELECT c.id, c.name, c.description
      FROM clubs c
@@ -19,7 +22,7 @@ async function getUserClubs(userId) {
   return result.rows;
 }
 
-// POST /auth/register -- create user account (attendee by default, is_admin = false)
+// POST /auth/register -- create user account
 router.post('/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -30,31 +33,38 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const existing = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    const cleanEmail = email.toLowerCase().trim();
+    const existing = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
 
-    // Check if this is the very first user in the system; if so, make them admin
-    const totalUsers = await db.query('SELECT COUNT(*) as count FROM users');
-    const isFirstUser = parseInt(totalUsers.rows[0].count, 10) === 0;
-
+    const isSystemAdmin = isAdminEmail(cleanEmail);
     const passwordHash = await argon2.hash(password);
     const result = await db.query(
       'INSERT INTO users (email, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id, email, is_admin, created_at',
-      [email.toLowerCase(), passwordHash, isFirstUser]
+      [cleanEmail, passwordHash, isSystemAdmin]
     );
 
     const user = result.rows[0];
-    const clubs = await getUserClubs(user.id);
+    const clubs = await getUserClubs(user.id, user.email);
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, is_admin: user.is_admin },
+      { id: user.id, email: user.email, is_admin: isSystemAdmin },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.status(201).json({ user: { ...user, clubs }, token });
+    res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        is_admin: isSystemAdmin,
+        clubs,
+        created_at: user.created_at,
+      },
+      token,
+    });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -69,9 +79,10 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     const result = await db.query(
-      'SELECT id, email, password_hash, is_admin, created_at FROM users WHERE email = $1',
-      [email.toLowerCase()]
+      'SELECT id, email, password_hash, created_at FROM users WHERE email = $1',
+      [cleanEmail]
     );
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -83,10 +94,11 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const clubs = await getUserClubs(user.id);
+    const isSystemAdmin = isAdminEmail(user.email);
+    const clubs = await getUserClubs(user.id, user.email);
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, is_admin: user.is_admin },
+      { id: user.id, email: user.email, is_admin: isSystemAdmin },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -95,7 +107,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        is_admin: user.is_admin,
+        is_admin: isSystemAdmin,
         clubs,
         created_at: user.created_at,
       },
@@ -107,11 +119,11 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET /auth/me -- return current user with is_admin and clubs list
+// GET /auth/me -- return current user with is_admin (from env) and clubs list
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, email, is_admin, created_at FROM users WHERE id = $1',
+      'SELECT id, email, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
     if (result.rows.length === 0) {
@@ -119,11 +131,13 @@ router.get('/me', requireAuth, async (req, res) => {
     }
 
     const user = result.rows[0];
-    const clubs = await getUserClubs(user.id);
+    const isSystemAdmin = isAdminEmail(user.email);
+    const clubs = await getUserClubs(user.id, user.email);
 
     res.json({
       user: {
         ...user,
+        is_admin: isSystemAdmin,
         clubs,
       },
     });

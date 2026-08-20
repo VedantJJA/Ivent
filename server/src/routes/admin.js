@@ -1,10 +1,10 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, isAdminEmail } = require('../middleware/auth');
 
 const router = express.Router();
 
-// All admin routes require auth and is_admin = true
+// All admin routes require auth and system admin validation
 router.use(requireAuth);
 router.use(requireAdmin);
 
@@ -71,11 +71,46 @@ router.post('/clubs', async (req, res) => {
   }
 });
 
-// GET /admin/users -- list all registered users with their clubs and admin status
+// GET /admin/events -- list all events across all clubs for admin oversight
+router.get('/events', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT e.*, c.name AS club_name, u.email AS creator_email,
+              COUNT(r.id) FILTER (WHERE r.checked_in_at IS NOT NULL) AS checked_in_count
+       FROM events e
+       LEFT JOIN clubs c ON e.club_id = c.id
+       LEFT JOIN users u ON e.created_by = u.id
+       LEFT JOIN registrations r ON r.event_id = e.id
+       GROUP BY e.id, c.name, u.email
+       ORDER BY e.created_at DESC`
+    );
+
+    res.json({ events: result.rows });
+  } catch (err) {
+    console.error('List admin events error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /admin/events/:id -- admin delete any event
+router.delete('/events/:id', async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM events WHERE id = $1 RETURNING id, name', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    res.json({ message: `Event "${result.rows[0].name}" deleted successfully` });
+  } catch (err) {
+    console.error('Admin delete event error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /admin/users -- list all registered users with their clubs
 router.get('/users', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT u.id, u.email, u.is_admin, u.created_at,
+      `SELECT u.id, u.email, u.created_at,
               COALESCE(
                 json_agg(
                   json_build_object('id', c.id, 'name', c.name)
@@ -85,11 +120,16 @@ router.get('/users', async (req, res) => {
        FROM users u
        LEFT JOIN club_members cm ON cm.user_id = u.id
        LEFT JOIN clubs c ON c.id = cm.club_id
-       GROUP BY u.id, u.email, u.is_admin, u.created_at
+       GROUP BY u.id, u.email, u.created_at
        ORDER BY u.created_at DESC`
     );
 
-    res.json({ users: result.rows });
+    const users = result.rows.map(u => ({
+      ...u,
+      is_admin: isAdminEmail(u.email),
+    }));
+
+    res.json({ users });
   } catch (err) {
     console.error('List users error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -103,16 +143,32 @@ router.post('/clubs/:clubId/members', async (req, res) => {
     const { email, userId } = req.body;
 
     let targetUserId = userId;
-    if (!targetUserId && email) {
-      const userRes = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    let targetEmail = email;
+
+    if (!targetUserId && targetEmail) {
+      const cleanEmail = targetEmail.toLowerCase().trim();
+      if (isAdminEmail(cleanEmail)) {
+        return res.status(400).json({
+          error: 'System administrator / developer cannot be added to a club',
+        });
+      }
+      const userRes = await db.query('SELECT id, email FROM users WHERE email = $1', [cleanEmail]);
       if (userRes.rows.length === 0) {
         return res.status(404).json({ error: 'User with this email not found' });
       }
       targetUserId = userRes.rows[0].id;
+      targetEmail = userRes.rows[0].email;
     }
 
     if (!targetUserId) {
       return res.status(400).json({ error: 'User email or ID is required' });
+    }
+
+    // Check if target user is admin
+    if (isAdminEmail(targetEmail)) {
+      return res.status(400).json({
+        error: 'System administrator / developer cannot be added to a club',
+      });
     }
 
     await db.query(
@@ -140,28 +196,6 @@ router.delete('/clubs/:clubId/members/:userId', async (req, res) => {
     res.json({ message: 'Organizer removed from club' });
   } catch (err) {
     console.error('Remove club member error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /admin/users/:userId/toggle-admin -- toggle admin status
-router.post('/users/:userId/toggle-admin', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const userRes = await db.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
-    if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const currentAdmin = userRes.rows[0].is_admin;
-    const updated = await db.query(
-      'UPDATE users SET is_admin = $1 WHERE id = $2 RETURNING id, email, is_admin',
-      [!currentAdmin, userId]
-    );
-
-    res.json({ user: updated.rows[0] });
-  } catch (err) {
-    console.error('Toggle admin error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

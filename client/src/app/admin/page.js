@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/lib/api';
 import {
   ShieldIcon, UsersIcon, PlusIcon, XIcon, CheckCircleIcon,
-  LoaderIcon
+  LoaderIcon, CalendarIcon, BarChartIcon
 } from '@/components/Icons';
 
 export default function AdminPage() {
@@ -15,6 +16,7 @@ export default function AdminPage() {
 
   const [clubs, setClubs] = useState([]);
   const [users, setUsers] = useState([]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -42,12 +44,14 @@ export default function AdminPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [clubsData, usersData] = await Promise.all([
+      const [clubsData, usersData, eventsData] = await Promise.all([
         apiGet('/admin/clubs'),
         apiGet('/admin/users'),
+        apiGet('/admin/events'),
       ]);
       setClubs(clubsData.clubs || []);
       setUsers(usersData.users || []);
+      setEvents(eventsData.events || []);
       if (clubsData.clubs?.length > 0 && !selectedClubId) {
         setSelectedClubId(clubsData.clubs[0].id);
       }
@@ -126,12 +130,23 @@ export default function AdminPage() {
     }
   };
 
-  const handleToggleAdmin = async (userId) => {
+  const handleDeleteEvent = async (eventId, eventName) => {
+    if (!window.confirm(`Are you sure you want to delete event "${eventName}"? This action cannot be undone.`)) {
+      return;
+    }
     setError(null);
     setSuccess(null);
     try {
-      await apiPost(`/admin/users/${userId}/toggle-admin`, {});
-      setSuccess('Admin status updated');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/admin/events/${eventId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ivent_token')}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete event');
+      setSuccess(data.message || 'Event deleted successfully');
       await fetchData();
     } catch (err) {
       setError(err.message);
@@ -146,14 +161,25 @@ export default function AdminPage() {
     );
   }
 
+  const formatDate = (dateStr) => {
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>
-          <ShieldIcon size={28} color="var(--color-primary-400)" />
-          {' '}Admin Panel
-        </h1>
-        <p>Manage clubs, grant organizer status, and assign administrator privileges</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <h1>
+            <ShieldIcon size={28} color="var(--color-primary-400)" />
+            {' '}System Developer & Admin Panel
+          </h1>
+        </div>
+        <p>Environment-authenticated developer console. Manage clubs, link organizers, and oversee system events.</p>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -178,14 +204,12 @@ export default function AdminPage() {
               <div className="dashboard-stat-label">Total Clubs</div>
             </div>
             <div className="dashboard-stat">
-              <div className="dashboard-stat-value">{users.length}</div>
-              <div className="dashboard-stat-label">Registered Users</div>
+              <div className="dashboard-stat-value">{events.length}</div>
+              <div className="dashboard-stat-label">Total Events</div>
             </div>
             <div className="dashboard-stat">
-              <div className="dashboard-stat-value" style={{ color: 'var(--color-primary-400)' }}>
-                {users.filter(u => u.is_admin).length}
-              </div>
-              <div className="dashboard-stat-label">Admins</div>
+              <div className="dashboard-stat-value">{users.length}</div>
+              <div className="dashboard-stat-label">Registered Users</div>
             </div>
           </div>
 
@@ -225,6 +249,7 @@ export default function AdminPage() {
                     onChange={(e) => setOrganizerEmail(e.target.value)}
                     required
                   />
+                  <span className="form-hint">Note: Admins cannot be added to clubs</span>
                 </div>
 
                 <button
@@ -280,6 +305,77 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {/* Events Management (Delete Events) */}
+          <div className="dashboard-section">
+            <h2>
+              <CalendarIcon size={20} />
+              All System Events ({events.length})
+            </h2>
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Event Name</th>
+                    <th>Club</th>
+                    <th>Date</th>
+                    <th>Registered</th>
+                    <th>Checked In</th>
+                    <th>Creator</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((ev) => (
+                    <tr key={ev.id}>
+                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                        <Link href={`/events/${ev.id}`} style={{ color: 'inherit' }}>
+                          {ev.name}
+                        </Link>
+                      </td>
+                      <td>
+                        {ev.club_name ? (
+                          <span className="badge badge-primary">{ev.club_name}</span>
+                        ) : (
+                          <span className="badge badge-muted">Independent</span>
+                        )}
+                      </td>
+                      <td>{formatDate(ev.event_date)}</td>
+                      <td>{ev.registered_count} / {ev.capacity}</td>
+                      <td style={{ color: 'var(--color-success)', fontWeight: 600 }}>
+                        {ev.checked_in_count || 0}
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                        {ev.creator_email}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <Link href={`/events/${ev.id}/dashboard`} className="btn btn-secondary btn-sm">
+                            <BarChartIcon size={14} />
+                            Stats
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => handleDeleteEvent(ev.id, ev.name)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {events.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center text-muted" style={{ padding: 'var(--space-xl)' }}>
+                        No events have been created yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Clubs & Organizers List */}
           <div className="dashboard-section">
             <h2>
@@ -292,7 +388,7 @@ export default function AdminPage() {
                   <tr>
                     <th>Club Name</th>
                     <th>Description</th>
-                    <th>Events Hosted</th>
+                    <th>Events</th>
                     <th>Linked Organizers</th>
                   </tr>
                 </thead>
@@ -347,15 +443,14 @@ export default function AdminPage() {
           <div className="dashboard-section">
             <h2>
               <ShieldIcon size={20} />
-              Registered Users and Roles
+              Registered Users
             </h2>
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
                     <th>Email</th>
-                    <th>Role / Club Status</th>
-                    <th>Actions</th>
+                    <th>Status / Role</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -363,30 +458,19 @@ export default function AdminPage() {
                     <tr key={u.id}>
                       <td>{u.email}</td>
                       <td>
-                        {u.is_admin && (
+                        {u.is_admin ? (
                           <span className="badge badge-primary" style={{ marginRight: '6px' }}>
-                            Admin
+                            System Developer & Admin
                           </span>
-                        )}
-                        {u.clubs && u.clubs.length > 0 ? (
+                        ) : u.clubs && u.clubs.length > 0 ? (
                           u.clubs.map((c) => (
                             <span key={c.id} className="badge badge-success" style={{ marginRight: '6px' }}>
                               {c.name} Organizer
                             </span>
                           ))
-                        ) : !u.is_admin ? (
+                        ) : (
                           <span className="badge badge-muted">Attendee</span>
-                        ) : null}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleToggleAdmin(u.id)}
-                          disabled={u.id === user.id}
-                        >
-                          {u.is_admin ? 'Revoke Admin' : 'Make Admin'}
-                        </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -412,8 +496,8 @@ INSERT INTO club_members (club_id, user_id)
 SELECT c.id, u.id FROM clubs c, users u
 WHERE c.name = 'Robotics Club' AND u.email = 'target_user@example.com';
 
--- 3. Grant Admin status to a user:
-UPDATE users SET is_admin = TRUE WHERE email = 'target_user@example.com';`}
+-- 3. Delete an Event:
+DELETE FROM events WHERE id = 'event-uuid-here';`}
             </pre>
           </div>
         </>

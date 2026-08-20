@@ -1,11 +1,11 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireOrganizer, optionalAuth } = require('../middleware/auth');
+const { requireAuth, requireOrganizer, optionalAuth, isAdminEmail } = require('../middleware/auth');
 const { getEventStats, getInsight } = require('../services/insights');
 
 const router = express.Router();
 
-// GET /events/clubs -- public list of clubs
+// GET /events/clubs/list -- public list of clubs
 router.get('/clubs/list', async (req, res) => {
   try {
     const result = await db.query(
@@ -22,9 +22,71 @@ router.get('/clubs/list', async (req, res) => {
   }
 });
 
-// POST /events -- create event (requires user to be an admin or member of the club)
+// GET /events/organizer/clubs -- get clubs user is an organizer of + their hosted events
+router.get('/organizer/clubs', requireAuth, async (req, res) => {
+  try {
+    if (isAdminEmail(req.user.email)) {
+      return res.json({ clubs: [] });
+    }
+
+    // Get clubs the user is a member of
+    const clubsResult = await db.query(
+      `SELECT c.*, cm.added_at as joined_at
+       FROM clubs c
+       JOIN club_members cm ON cm.club_id = c.id
+       WHERE cm.user_id = $1
+       ORDER BY c.name ASC`,
+      [req.user.id]
+    );
+
+    const clubs = clubsResult.rows;
+
+    // Get all events for these clubs with registration and check-in counts
+    const clubIds = clubs.map(c => c.id);
+    let events = [];
+    if (clubIds.length > 0) {
+      const eventsResult = await db.query(
+        `SELECT e.*, c.name AS club_name,
+                COUNT(r.id) FILTER (WHERE r.checked_in_at IS NOT NULL) AS checked_in_count
+         FROM events e
+         JOIN clubs c ON e.club_id = c.id
+         LEFT JOIN registrations r ON r.event_id = e.id
+         WHERE e.club_id = ANY($1::uuid[])
+         GROUP BY e.id, c.name
+         ORDER BY e.event_date DESC`,
+        [clubIds]
+      );
+      events = eventsResult.rows;
+    }
+
+    // Group events by club
+    const eventsByClub = {};
+    for (const ev of events) {
+      if (!eventsByClub[ev.club_id]) eventsByClub[ev.club_id] = [];
+      eventsByClub[ev.club_id].push(ev);
+    }
+
+    const clubsWithEvents = clubs.map(c => ({
+      ...c,
+      events: eventsByClub[c.id] || [],
+    }));
+
+    res.json({ clubs: clubsWithEvents });
+  } catch (err) {
+    console.error('Organizer clubs error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /events -- create event (requires user to be an organizer of the specified club; admins cannot create events)
 router.post('/', requireAuth, async (req, res) => {
   try {
+    if (isAdminEmail(req.user.email)) {
+      return res.status(403).json({
+        error: 'Administrators and developers cannot create events. Only club organizers can create events for their clubs.',
+      });
+    }
+
     const { name, description, location, eventDate, capacity, clubId } = req.body;
     if (!name || !eventDate || !capacity) {
       return res.status(400).json({ error: 'Name, event date, and capacity are required' });
@@ -33,33 +95,25 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Capacity must be at least 1' });
     }
 
-    // Verify user is an admin or organizer of the specified club
-    const userRes = await db.query('SELECT is_admin FROM users WHERE id = $1', [req.user.id]);
-    const isAdmin = userRes.rows[0]?.is_admin;
+    // Verify user is in at least one club
+    const clubMemberships = await db.query(
+      'SELECT club_id FROM club_members WHERE user_id = $1',
+      [req.user.id]
+    );
+    if (clubMemberships.rows.length === 0) {
+      return res.status(403).json({
+        error: 'Only club organizers can create events. You are not currently linked to any club.',
+      });
+    }
 
-    let targetClubId = clubId || null;
-
-    if (!isAdmin) {
-      // User must be in at least one club
-      const clubMemberships = await db.query(
-        'SELECT club_id FROM club_members WHERE user_id = $1',
-        [req.user.id]
-      );
-      if (clubMemberships.rows.length === 0) {
-        return res.status(403).json({
-          error: 'Only club organizers and administrators can create events. Contact an admin to get linked to a club.',
-        });
+    let targetClubId = clubId;
+    if (targetClubId) {
+      const isMember = clubMemberships.rows.some(m => m.club_id === targetClubId);
+      if (!isMember) {
+        return res.status(403).json({ error: 'You are not an organizer for the selected club' });
       }
-
-      if (targetClubId) {
-        const isMember = clubMemberships.rows.some(m => m.club_id === targetClubId);
-        if (!isMember) {
-          return res.status(403).json({ error: 'You are not an organizer for the selected club' });
-        }
-      } else {
-        // Default to first club user belongs to
-        targetClubId = clubMemberships.rows[0].club_id;
-      }
+    } else {
+      targetClubId = clubMemberships.rows[0].club_id;
     }
 
     const client = await db.getClient();
@@ -130,6 +184,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const event = result.rows[0];
     let registration = null;
     let isOrganizer = false;
+    const isSystemAdmin = req.user ? isAdminEmail(req.user.email) : false;
 
     if (req.user) {
       // Check if user is registered
@@ -141,22 +196,49 @@ router.get('/:id', optionalAuth, async (req, res) => {
         registration = regResult.rows[0];
       }
 
-      // Check if user is organizer (admin, direct organizer, or member of event's club)
+      // Check if user is organizer
       const orgResult = await db.query(
         `SELECT 1 
          FROM events e
          LEFT JOIN event_organizers eo ON eo.event_id = e.id AND eo.user_id = $2
          LEFT JOIN club_members cm ON cm.club_id = e.club_id AND cm.user_id = $2
-         JOIN users u ON u.id = $2
-         WHERE e.id = $1 AND (u.is_admin = TRUE OR eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL)`,
-        [req.params.id, req.user.id]
+         WHERE e.id = $1 AND (eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL OR $3 = TRUE)`,
+        [req.params.id, req.user.id, isSystemAdmin]
       );
       isOrganizer = orgResult.rows.length > 0;
     }
 
-    res.json({ event, registration, isOrganizer });
+    res.json({ event, registration, isOrganizer, isAdmin: isSystemAdmin });
   } catch (err) {
     console.error('Get event error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /events/:id -- delete event (allowed for admin or club/event organizers)
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const isSystemAdmin = isAdminEmail(req.user.email);
+
+    // If not admin, check organizer permission
+    if (!isSystemAdmin) {
+      const orgCheck = await db.query(
+        `SELECT 1 
+         FROM events e
+         LEFT JOIN event_organizers eo ON eo.event_id = e.id AND eo.user_id = $2
+         LEFT JOIN club_members cm ON cm.club_id = e.club_id AND cm.user_id = $2
+         WHERE e.id = $1 AND (eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL)`,
+        [req.params.id, req.user.id]
+      );
+      if (orgCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Permission denied: only event organizers or admins can delete this event' });
+      }
+    }
+
+    await db.query('DELETE FROM events WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Event deleted successfully' });
+  } catch (err) {
+    console.error('Delete event error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -169,7 +251,12 @@ router.post('/:id/organizers', requireAuth, requireOrganizer, async (req, res) =
       return res.status(400).json({ error: 'Email of the new organizer is required' });
     }
 
-    const userResult = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    const cleanEmail = email.toLowerCase().trim();
+    if (isAdminEmail(cleanEmail)) {
+      return res.status(400).json({ error: 'System administrator cannot be added as an organizer' });
+    }
+
+    const userResult = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'No user found with that email' });
     }
