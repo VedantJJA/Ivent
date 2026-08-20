@@ -1,14 +1,26 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
+// Extract token from Authorization header or query parameter
+function extractToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+  // Fallback to query param (used for CSV download via window.open)
+  if (req.query && req.query.token) {
+    return req.query.token;
+  }
+  return null;
+}
+
 // Optional auth -- sets req.user if valid JWT present, does not block
 function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = extractToken(req);
+  if (!token) {
     return next();
   }
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
   } catch (err) {
@@ -19,12 +31,11 @@ function optionalAuth(req, res, next) {
 
 // Required auth -- blocks with 401 if no valid JWT
 function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = extractToken(req);
+  if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
