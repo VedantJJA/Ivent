@@ -32,7 +32,7 @@ async function computeTotp(secret) {
   try {
     const buffer = new ArrayBuffer(8);
     const view = new DataView(buffer);
-    view.setBigUint64(0, BigInt(time), false); // Big-Endian 64-bit uint
+    view.setBigUint64(0, BigInt(time), false);
 
     const keyBytes = base32Decode(secret);
     const key = await window.crypto.subtle.importKey(
@@ -67,6 +67,7 @@ export default function MyTicketPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [secret, setSecret] = useState(null);
+  const [ticketMeta, setTicketMeta] = useState(null);
   const [currentCode, setCurrentCode] = useState('------');
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [countdown, setCountdown] = useState(30);
@@ -84,19 +85,24 @@ export default function MyTicketPage() {
     }
   }, [authLoading, user, router]);
 
-  // Load QR library dynamically (client-side only)
+  // Load QR library dynamically
   useEffect(() => {
     import('qrcode').then((mod) => {
       qrLibRef.current = mod.default || mod;
     });
   }, []);
 
-  // Fetch TOTP secret once
+  // Fetch TOTP secret and ticket details
   useEffect(() => {
     if (!user) return;
     apiGet(`/registrations/${regId}/secret`)
       .then((data) => {
         setSecret(data.secret);
+        setTicketMeta({
+          eventName: data.eventName,
+          email: data.email,
+          regNumber: data.regNumber,
+        });
       })
       .catch((err) => {
         if (err.message.includes('checked')) {
@@ -115,7 +121,6 @@ export default function MyTicketPage() {
     setCountdown(remaining);
     setCurrentCode(code);
 
-    // Only regenerate QR image if the 30-second TOTP code actually changed
     if (code !== lastCodeRef.current && qrLibRef.current) {
       lastCodeRef.current = code;
       const qrPayload = `REG_${regId}.${code}`;
@@ -184,12 +189,23 @@ export default function MyTicketPage() {
     return `${code.slice(0, 3)} ${code.slice(3)}`;
   };
 
+  const regNumToDisplay = ticketMeta?.regNumber || user?.reg_number;
+
   return (
     <div className="ticket-container">
       <div className="ticket-card">
         <TicketIcon size={32} color="var(--color-primary-400)" />
-        <h1>Your Event Ticket</h1>
-        <p>Show this QR code at the venue entrance for check-in</p>
+        <h1>{ticketMeta?.eventName || 'Your Event Ticket'}</h1>
+        <p>Show this rotating QR code at the venue entrance for check-in</p>
+
+        {/* Registration Number / Attendee Badge */}
+        {regNumToDisplay && (
+          <div style={{ margin: 'var(--space-xs) 0 var(--space-sm)' }}>
+            <span className="badge badge-primary" style={{ fontSize: '0.85rem', padding: '4px 12px' }}>
+              Reg No: {regNumToDisplay}
+            </span>
+          </div>
+        )}
 
         {qrDataUrl ? (
           <div className="ticket-qr-wrapper">
@@ -226,10 +242,14 @@ export default function MyTicketPage() {
           />
         </div>
 
-        <div style={{ marginTop: 'var(--space-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-sm)' }}>
+        <div style={{ marginTop: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+          Ticket ID: {regId}
+        </div>
+
+        <div style={{ marginTop: 'var(--space-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-sm)' }}>
           <ShieldIcon size={16} color="var(--color-primary-400)" />
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Dynamic TOTP rotates every 30s (prevents screenshots)
+            Dynamic TOTP rotates every 30s (anti-counterfeit)
           </span>
         </div>
       </div>

@@ -33,7 +33,11 @@ router.post('/events/:id/register', requireAuth, async (req, res) => {
 router.get('/registrations/:id/secret', requireAuth, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT totp_secret, user_id FROM registrations WHERE id = $1',
+      `SELECT r.totp_secret, r.user_id, r.checked_in_at, e.name as event_name, u.email, u.reg_number
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       JOIN users u ON r.user_id = u.id
+       WHERE r.id = $1`,
       [req.params.id]
     );
     if (result.rows.length === 0) {
@@ -45,7 +49,13 @@ router.get('/registrations/:id/secret', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You can only view your own registration secret' });
     }
 
-    res.json({ secret: registration.totp_secret });
+    res.json({
+      secret: registration.totp_secret,
+      checkedInAt: registration.checked_in_at,
+      eventName: registration.event_name,
+      email: registration.email,
+      regNumber: registration.reg_number,
+    });
   } catch (err) {
     console.error('Get secret error:', err);
     res.status(500).json({ error: 'Server error' });

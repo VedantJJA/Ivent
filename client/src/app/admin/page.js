@@ -223,12 +223,12 @@ export default function AdminPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="orgEmail">User Email</label>
+                  <label className="form-label" htmlFor="orgEmail">User Email or Registration Number</label>
                   <input
                     id="orgEmail"
-                    type="email"
+                    type="text"
                     className="form-input"
-                    placeholder="user@example.com"
+                    placeholder="e.g. user@example.com or 21BCE1001"
                     value={organizerEmail}
                     onChange={(e) => setOrganizerEmail(e.target.value)}
                     required
@@ -434,6 +434,7 @@ export default function AdminPage() {
                 <thead>
                   <tr>
                     <th>Email</th>
+                    <th>Reg No</th>
                     <th>Status / Role</th>
                   </tr>
                 </thead>
@@ -441,6 +442,7 @@ export default function AdminPage() {
                   {users.map((u) => (
                     <tr key={u.id}>
                       <td>{u.email}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{u.reg_number || '--'}</td>
                       <td>
                         {u.is_admin ? (
                           <span className="badge badge-primary" style={{ marginRight: '6px' }}>

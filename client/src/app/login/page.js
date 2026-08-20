@@ -98,15 +98,17 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address *</label>
+            <label className="form-label" htmlFor="email">
+              {mode === 'login' ? 'Email Address or Registration Number *' : 'Email Address *'}
+            </label>
             <input
               id="email"
-              type="email"
+              type="text"
               className="form-input"
-              placeholder="you@example.com"
+              placeholder={mode === 'login' ? 'you@example.com or 21BCE1001' : 'you@example.com'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              autoComplete="username"
               required
             />
           </div>
