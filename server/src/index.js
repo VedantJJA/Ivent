@@ -16,21 +16,32 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://127.0.0.1:3000',
   process.env.CLIENT_URL,
 ].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow server-to-server or curl/mobile
+    // Allow non-browser requests (server-to-server, curl, test runners, mobile native apps)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.some(o => origin.startsWith(o) || o === '*')) {
+
+    // Allow explicitly configured client URLs
+    if (allowedOrigins.some(o => origin === o || (o !== '*' && origin.startsWith(o)))) {
       return callback(null, true);
     }
-    // Allow any .onrender.com subdomain for Render preview / production instances
-    if (origin.endsWith('.onrender.com') || origin.includes('localhost')) {
+
+    // Allow localhost and loopback interfaces for local development
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
-    return callback(null, true); // Permissive in testing
+
+    // Allow Render deployment domains (*.onrender.com)
+    if (/^https:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Disallow unknown external origins
+    return callback(new Error(`Origin ${origin} not allowed by CORS policy`));
   },
   credentials: true,
 };

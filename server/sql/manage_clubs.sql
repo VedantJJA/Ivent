@@ -7,12 +7,9 @@ VALUES ('Coding Club', 'Technical coding and development club')
 ON CONFLICT (name) DO NOTHING
 RETURNING *;
 
--- 2. Make a user an Admin
--- (Replace user email with the target email)
-UPDATE users
-SET is_admin = TRUE
-WHERE email = 'admin@ivent.local'
-RETURNING id, email, is_admin;
+-- 2. System Administrator Access
+-- (System administrators are defined securely via the ADMIN_EMAIL environment variable, e.g. ADMIN_EMAIL=admin@example.com)
+-- The users table has no stored role column, ensuring clean per-event and per-club authorization.
 
 -- 3. Link a user to a Club as an Organizer
 -- (Replace club name and user email)

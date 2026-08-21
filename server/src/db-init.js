@@ -7,6 +7,15 @@ async function initDatabase() {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     await db.query(schema);
+
+    // Schema cleanup migrations for legacy tables / redundant columns
+    try {
+      await db.query('ALTER TABLE users DROP COLUMN IF EXISTS is_admin;');
+      await db.query('DROP TABLE IF EXISTS station_bundles;');
+    } catch {
+      // ignore
+    }
+
     console.log('Database schema initialized successfully');
 
     // Seed sample clubs if none exist

@@ -1,11 +1,10 @@
 -- Ivent Event Check-In System Schema
 
--- Users table with is_admin flag.
+-- Users table (global roles removed; admin access strictly derived from ADMIN_EMAIL env var).
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  is_admin BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -77,18 +76,6 @@ CREATE TABLE IF NOT EXISTS scan_log (
   UNIQUE(client_scan_id)
 );
 
--- Station bundles for offline cryptographic distribution.
-CREATE TABLE IF NOT EXISTS station_bundles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_id UUID REFERENCES events(id) ON DELETE CASCADE,
-  station_id TEXT NOT NULL,
-  ciphertext BYTEA NOT NULL,
-  salt BYTEA NOT NULL,
-  iv BYTEA NOT NULL,
-  auth_tag BYTEA NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- Database Performance and Look-up Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_club_members_user_id ON club_members(user_id);
@@ -102,3 +89,20 @@ CREATE INDEX IF NOT EXISTS idx_registrations_user_id ON registrations(user_id);
 CREATE INDEX IF NOT EXISTS idx_registrations_checked_in_at ON registrations(checked_in_at);
 CREATE INDEX IF NOT EXISTS idx_scan_log_registration_id ON scan_log(registration_id);
 CREATE INDEX IF NOT EXISTS idx_scan_log_server_received_at ON scan_log(server_received_at DESC);
+
+-- Trigger Function: Automatically decrement registered_count when a registration is deleted / cancelled
+CREATE OR REPLACE FUNCTION trg_decrement_event_registered_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE events
+  SET registered_count = GREATEST(0, registered_count - 1)
+  WHERE id = OLD.event_id;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_registrations_decrement_count ON registrations;
+CREATE TRIGGER trg_registrations_decrement_count
+AFTER DELETE ON registrations
+FOR EACH ROW
+EXECUTE FUNCTION trg_decrement_event_registered_count();

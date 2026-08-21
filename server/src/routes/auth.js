@@ -43,8 +43,8 @@ router.post('/register', async (req, res) => {
     const isSystemAdmin = isAdminEmail(cleanEmail);
     const passwordHash = await argon2.hash(password);
     const result = await db.query(
-      'INSERT INTO users (email, password_hash, is_admin) VALUES ($1, $2, $3) RETURNING id, email, is_admin, created_at',
-      [cleanEmail, passwordHash, isSystemAdmin]
+      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, created_at',
+      [cleanEmail, passwordHash]
     );
 
     const user = result.rows[0];

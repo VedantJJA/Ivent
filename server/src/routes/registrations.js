@@ -97,4 +97,54 @@ router.get('/registrations/my', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /registrations/:id -- cancel / delete registration (attendee, organizer, or admin)
+router.delete('/registrations/:id', requireAuth, async (req, res) => {
+  try {
+    const isSystemAdmin = isAdminEmail(req.user.email);
+    const regResult = await db.query(
+      `SELECT r.id, r.event_id, r.user_id, r.checked_in_at, e.name as event_name
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+
+    if (regResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    const reg = regResult.rows[0];
+
+    // Check organizer permissions for this event
+    let isOrganizer = false;
+    if (!isSystemAdmin && reg.user_id !== req.user.id) {
+      const orgCheck = await db.query(
+        `SELECT 1 FROM events e
+         LEFT JOIN event_organizers eo ON eo.event_id = e.id AND eo.user_id = $2
+         LEFT JOIN club_members cm ON cm.club_id = e.club_id AND cm.user_id = $2
+         WHERE e.id = $1 AND (eo.user_id IS NOT NULL OR cm.user_id IS NOT NULL OR e.created_by = $2)`,
+        [reg.event_id, req.user.id]
+      );
+      isOrganizer = orgCheck.rows.length > 0;
+    }
+
+    if (reg.user_id !== req.user.id && !isOrganizer && !isSystemAdmin) {
+      return res.status(403).json({ error: 'You do not have permission to cancel this registration' });
+    }
+
+    if (reg.checked_in_at && !isSystemAdmin && !isOrganizer) {
+      return res.status(400).json({ error: 'Cannot cancel ticket after attendee has already checked in' });
+    }
+
+    // Trigger trg_registrations_decrement_count automatically decrements events.registered_count
+    await db.query('DELETE FROM registrations WHERE id = $1', [req.params.id]);
+
+    res.json({ message: 'Registration cancelled successfully', eventId: reg.event_id });
+  } catch (err) {
+    console.error('Delete registration error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;
+
