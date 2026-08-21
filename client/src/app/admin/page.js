@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost, apiDelete } from '@/lib/api';
 import {
   ShieldIcon, UsersIcon, PlusIcon, XIcon, CheckCircleIcon,
-  LoaderIcon, CalendarIcon, BarChartIcon
+  LoaderIcon, CalendarIcon, BarChartIcon, TrashIcon
 } from '@/components/Icons';
 
 export default function AdminPage() {
@@ -52,7 +52,8 @@ export default function AdminPage() {
       setClubs(clubsData.clubs || []);
       setUsers(usersData.users || []);
       setEvents(eventsData.events || []);
-      if (clubsData.clubs?.length > 0 && !selectedClubId) {
+
+      if (clubsData.clubs && clubsData.clubs.length > 0 && !selectedClubId) {
         setSelectedClubId(clubsData.clubs[0].id);
       }
     } catch (err) {
@@ -63,7 +64,7 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    if (user?.is_admin) {
+    if (user && user.is_admin) {
       fetchData();
     }
   }, [user]);
@@ -71,17 +72,18 @@ export default function AdminPage() {
   const handleCreateClub = async (e) => {
     e.preventDefault();
     if (!newClubName.trim()) return;
-    setCreatingClub(true);
+
     setError(null);
     setSuccess(null);
+    setCreatingClub(true);
     try {
       await apiPost('/admin/clubs', {
         name: newClubName.trim(),
-        description: newClubDesc.trim() || null,
+        description: newClubDesc.trim() || undefined,
       });
+      setSuccess(`Club "${newClubName}" created successfully`);
       setNewClubName('');
       setNewClubDesc('');
-      setSuccess('Club created successfully');
       await fetchData();
     } catch (err) {
       setError(err.message);
@@ -93,15 +95,16 @@ export default function AdminPage() {
   const handleAddOrganizer = async (e) => {
     e.preventDefault();
     if (!selectedClubId || !organizerEmail.trim()) return;
-    setAddingOrganizer(true);
+
     setError(null);
     setSuccess(null);
+    setAddingOrganizer(true);
     try {
       await apiPost(`/admin/clubs/${selectedClubId}/members`, {
         email: organizerEmail.trim(),
       });
+      setSuccess(`Organizer linked to club successfully`);
       setOrganizerEmail('');
-      setSuccess('Organizer linked to club successfully');
       await fetchData();
     } catch (err) {
       setError(err.message);
@@ -110,12 +113,27 @@ export default function AdminPage() {
     }
   };
 
-  const handleRemoveOrganizer = async (clubId, userId) => {
+  const handleRemoveOrganizer = async (clubId, targetUserId) => {
     setError(null);
     setSuccess(null);
     try {
-      await apiDelete(`/admin/clubs/${clubId}/members/${userId}`);
+      await apiDelete(`/admin/clubs/${clubId}/members/${targetUserId}`);
       setSuccess('Organizer removed from club');
+      await fetchData();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteClub = async (clubId, clubName) => {
+    if (!window.confirm(`Are you sure you want to delete club "${clubName}"? This action cannot be undone and will remove all its events.`)) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await apiDelete(`/admin/clubs/${clubId}`);
+      setSuccess(data.message || 'Club deleted successfully');
       await fetchData();
     } catch (err) {
       setError(err.message);
@@ -373,6 +391,7 @@ export default function AdminPage() {
                     <th>Description</th>
                     <th>Events</th>
                     <th>Linked Organizers</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -408,11 +427,23 @@ export default function AdminPage() {
                           <span className="text-muted" style={{ fontSize: '0.8rem' }}>No organizers linked yet</span>
                         )}
                       </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleDeleteClub(club.id, club.name)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '0.75rem' }}
+                          title="Delete Club"
+                        >
+                          <TrashIcon size={12} />
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {clubs.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="text-center text-muted" style={{ padding: 'var(--space-xl)' }}>
+                      <td colSpan={5} className="text-center text-muted" style={{ padding: 'var(--space-xl)' }}>
                         No clubs found. Create one above or run the SQL query.
                       </td>
                     </tr>

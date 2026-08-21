@@ -123,7 +123,7 @@ npm run dev
 
 ### 1. System Developer / Admin
 - Identified strictly by the `ADMIN_EMAIL` environment variable.
-- Accesses `/admin` to create clubs, link organizers to clubs, view all users and events, and delete events.
+- Accesses `/admin` to create clubs, delete clubs, link organizers to clubs, view all users and events, and delete events.
 - Cannot join, register for, or participate in events directly.
 
 ### 2. Club Organizers

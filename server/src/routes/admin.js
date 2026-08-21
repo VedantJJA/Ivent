@@ -71,6 +71,20 @@ router.post('/clubs', async (req, res) => {
   }
 });
 
+// DELETE /admin/clubs/:id -- delete a club
+router.delete('/clubs/:id', async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM clubs WHERE id = $1 RETURNING id, name', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Club not found' });
+    }
+    res.json({ message: `Club "${result.rows[0].name}" deleted successfully` });
+  } catch (err) {
+    console.error('Admin delete club error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /admin/events -- list all events across all clubs for admin oversight
 router.get('/events', async (req, res) => {
   try {
