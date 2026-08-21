@@ -1,4 +1,9 @@
-const puppeteer = require('puppeteer');
+let puppeteer;
+try {
+  puppeteer = require('puppeteer');
+} catch {
+  puppeteer = require('puppeteer-core');
+}
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -302,7 +307,10 @@ async function captureScreenshots(data) {
 
   // 5. Rejected Duplicate Scan
   console.log('Capturing: 05-scanner-duplicate-rejected.png');
-  // Attempt second scan on attendee 2
+  // Wait 3.5s for the 3-second scanner cooldown gap to fully clear
+  await new Promise((r) => setTimeout(r, 3500));
+
+  // Attempt second scan on attendee 2 (triggering atomic duplicate rejection)
   await page.evaluate(
     ({ email, code }) => {
       const emailInput = document.querySelector('input[type="email"]') || document.querySelectorAll('input')[0];
@@ -320,7 +328,10 @@ async function captureScreenshots(data) {
     },
     { email: data.att2.user.email, code: validTotp2 }
   );
-  await new Promise((r) => setTimeout(r, 1200));
+
+  // Wait for the rejection banner to appear on screen
+  await page.waitForSelector('.scanner-result.result-rejected, .scanner-result', { timeout: 6000 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 800));
   await page.screenshot({ path: path.join(screenshotsDir, '05-scanner-duplicate-rejected.png'), fullPage: false });
 
   // 6. Live Organizer Dashboard

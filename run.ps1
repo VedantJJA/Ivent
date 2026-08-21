@@ -136,6 +136,12 @@ function Start-Dev {
     Write-Host "Server will run on http://localhost:3001" -ForegroundColor Yellow
     Write-Host "Client will run on http://localhost:3000`n" -ForegroundColor Yellow
 
+    # Stop any lingering process already holding port 3001 or 3000
+    Get-NetTCPConnection -LocalPort 3001,3000 -ErrorAction SilentlyContinue | ForEach-Object {
+        Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 500
+
     # Start server in background job
     $serverJob = Start-Job -ScriptBlock {
         param($dir)
