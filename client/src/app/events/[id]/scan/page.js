@@ -20,8 +20,6 @@ export default function ScanPage() {
   const [scanResult, setScanResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [startingCamera, setStartingCamera] = useState(false);
-  const [cameras, setCameras] = useState([]);
-  const [selectedCameraId, setSelectedCameraId] = useState('');
   const [error, setError] = useState(null);
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
@@ -99,37 +97,17 @@ export default function ScanPage() {
     }
   }, [id, user]);
 
-  // Query cameras when camera tab is active
-  useEffect(() => {
-    let active = true;
-    async function checkCameras() {
-      if (typeof window === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        if (active && videoDevices.length > 0) {
-          setCameras(videoDevices.map((d, i) => ({
-            id: d.deviceId,
-            label: d.label || `Camera ${i + 1}`,
-          })));
-        }
-      } catch {
-        // Enumerate might require camera stream first
-      }
-    }
-    checkCameras();
-    return () => { active = false; };
-  }, [scanMethod]);
-
   const stopScanning = useCallback(async () => {
     if (html5QrRef.current) {
       try {
         if (html5QrRef.current.isScanning) {
           await html5QrRef.current.stop();
         }
+        await html5QrRef.current.clear();
       } catch (err) {
         console.warn('Stop scanning warning:', err);
       }
+      html5QrRef.current = null;
     }
     setScanning(false);
     setStartingCamera(false);
@@ -141,30 +119,53 @@ export default function ScanPage() {
     setScanResult(null);
     setStartingCamera(true);
 
-    if (typeof window !== 'undefined' && !navigator.mediaDevices?.getUserMedia) {
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setError('Camera access is not supported on this browser or connection is not secure (requires HTTPS or localhost). Please use Manual Entry.');
       setStartingCamera(false);
       return;
     }
 
     try {
-      const { Html5Qrcode } = await import('html5-qrcode');
+      // 1. Explicitly prompt / verify camera permission on EVERY scan start attempt
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+      } catch (permErr) {
+        // Fallback to basic video request if environment facingMode constraint failed
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch {
+          throw permErr; // Re-throw original permission error
+        }
+      }
 
+      // Stop probe stream tracks immediately so Html5Qrcode has exclusive access
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+
+      // 2. Clean up any existing Html5Qrcode instance
       if (html5QrRef.current) {
         try {
           if (html5QrRef.current.isScanning) {
             await html5QrRef.current.stop();
           }
+          await html5QrRef.current.clear();
         } catch {
           // ignore
         }
+        html5QrRef.current = null;
       }
 
       const container = document.getElementById('qr-reader');
       if (!container) {
-        throw new Error('Scanner container not ready. Please try again.');
+        throw new Error('Scanner element is not ready. Please try again.');
       }
+      container.innerHTML = '';
 
+      const { Html5Qrcode } = await import('html5-qrcode');
       const qrScanner = new Html5Qrcode('qr-reader');
       html5QrRef.current = qrScanner;
 
@@ -178,46 +179,32 @@ export default function ScanPage() {
         handleScan(decodedText);
       };
 
-      if (selectedCameraId) {
-        try {
-          await qrScanner.start(selectedCameraId, qrConfig, scanCallback, () => {});
-          setScanning(true);
-          setStartingCamera(false);
-          return;
-        } catch (camErr) {
-          console.warn('Selected camera start failed, trying ideal environment:', camErr);
-        }
-      }
-
+      // Standard environment camera with fallback to user camera
       try {
         await qrScanner.start({ facingMode: { ideal: 'environment' } }, qrConfig, scanCallback, () => {});
-        setScanning(true);
-        setStartingCamera(false);
-        return;
-      } catch (envErr) {
-        console.warn('Environment camera failed, trying user camera:', envErr);
+      } catch (startErr) {
+        console.warn('Environment camera start failed, falling back to default camera:', startErr);
+        await qrScanner.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
       }
 
-      await qrScanner.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
       setScanning(true);
       setStartingCamera(false);
-
     } catch (err) {
       console.error('Camera launch error:', err);
       setScanning(false);
       setStartingCamera(false);
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera permission was blocked. Please tap the camera/lock icon in your browser address bar and choose "Allow".');
+        setError('Camera permission was not granted. Please allow camera access when prompted by your browser, or tap the lock/camera icon in your address bar to enable permissions and try again.');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setError('No camera was detected on this device. You can use Manual Entry below.');
+        setError('No camera detected on this device. Please use the Manual Entry tab below.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera is currently in use by another app or browser tab. Please close other camera tabs and try again.');
+        setError('Camera is currently in use by another application or browser tab. Please close other camera tabs and try again.');
       } else {
         setError(err.message || 'Could not start camera. Please use Manual Entry.');
       }
     }
-  }, [scanning, startingCamera, selectedCameraId]);
+  }, [scanning, startingCamera]);
 
   // Clean up scanner on unmount or tab switch
   useEffect(() => {
@@ -647,30 +634,72 @@ export default function ScanPage() {
 
       {/* Live Camera Viewport */}
       <div style={{ display: scanMethod === 'camera' ? 'block' : 'none' }}>
-        {cameras.length > 1 && (
-          <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
-            <label className="form-label" style={{ fontSize: '0.8rem' }}>Select Camera Source</label>
-            <select
-              className="form-select"
-              value={selectedCameraId}
-              onChange={(e) => {
-                setSelectedCameraId(e.target.value);
-                if (scanning) {
-                  stopScanning().then(startScanning);
-                }
+        <div className="scanner-viewport" style={{ position: 'relative' }}>
+          <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+
+          {!scanning && !startingCamera && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--color-bg-card)',
+                color: 'var(--color-text-secondary)',
+                padding: 'var(--space-lg)',
+                textAlign: 'center',
+                gap: 'var(--space-sm)',
+                zIndex: 2,
               }}
             >
-              {cameras.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+              <div
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'var(--color-bg-elevated)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 'var(--space-xs)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <ScanIcon size={32} color="var(--color-primary-400)" />
+              </div>
+              <div style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: '1.05rem' }}>
+                Camera Scanner Ready
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', maxWidth: '300px', lineHeight: 1.5 }}>
+                Tap the button below to activate your camera and point it at the attendee ticket QR code
+              </div>
+            </div>
+          )}
 
-        <div className="scanner-viewport">
-          <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+          {startingCamera && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--color-bg-card)',
+                color: 'var(--color-text-secondary)',
+                gap: 'var(--space-sm)',
+                zIndex: 3,
+              }}
+            >
+              <LoaderIcon size={36} color="var(--color-primary-400)" />
+              <div style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>Requesting Camera Access...</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                Please allow camera access when prompted
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
