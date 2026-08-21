@@ -88,59 +88,41 @@ async function getInsight(question, stats) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
     const prompt = `You are answering questions about a live event's check-in data. Use ONLY the JSON stats provided below. Never invent, estimate, or recompute a number that is not already in this data.\n\nStats:\n${JSON.stringify(stats, null, 2)}\n\nQuestion: ${question}`;
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    for (const model of models) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: prompt }],
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
 
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const data = await res.json();
-      const geminiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (geminiText) {
-        return { answer: geminiText.trim(), rawStats: stats, isFallback: false };
+        if (res.ok) {
+          const data = await res.json();
+          const geminiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (geminiText) {
+            clearTimeout(timeout);
+            return { answer: geminiText.trim(), rawStats: stats, isFallback: false };
+          }
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') break;
       }
     }
 
-    // OpenAI compatibility fallback for Gemini
-    const OpenAI = require('openai');
-    const gemini = new OpenAI({
-      apiKey: apiKey,
-      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    });
-
-    const completion = await gemini.chat.completions.create({
-      model: 'gemini-1.5-flash',
-      messages: [
-        {
-          role: 'system',
-          content:
-            "You are answering questions about a live event's check-in data. " +
-            'Use ONLY the JSON stats provided below. Never invent, estimate, or ' +
-            'recompute a number that is not already in this data.\n\n' +
-            JSON.stringify(stats),
-        },
-        { role: 'user', content: question },
-      ],
-    });
-
-    if (completion.choices?.[0]?.message?.content) {
-      return { answer: completion.choices[0].message.content, rawStats: stats, isFallback: false };
-    }
+    clearTimeout(timeout);
 
     return {
       answer: fallbackAnswer,
