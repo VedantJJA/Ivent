@@ -119,34 +119,14 @@ export default function ScanPage() {
     setScanResult(null);
     setStartingCamera(true);
 
-    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    if (typeof window === 'undefined' || !navigator.mediaDevices) {
       setError('Camera access is not supported on this browser or connection is not secure (requires HTTPS or localhost). Please use Manual Entry.');
       setStartingCamera(false);
       return;
     }
 
     try {
-      // 1. Explicitly prompt / verify camera permission on EVERY scan start attempt
-      let stream = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-        });
-      } catch (permErr) {
-        // Fallback to basic video request if environment facingMode constraint failed
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        } catch {
-          throw permErr; // Re-throw original permission error
-        }
-      }
-
-      // Stop probe stream tracks immediately so Html5Qrcode has exclusive access
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-
-      // 2. Clean up any existing Html5Qrcode instance
+      // 1. Clean up any existing Html5Qrcode instance
       if (html5QrRef.current) {
         try {
           if (html5QrRef.current.isScanning) {
@@ -171,20 +151,51 @@ export default function ScanPage() {
 
       const qrConfig = {
         fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const qrboxSize = Math.floor(minEdge * 0.75);
+          return {
+            width: Math.max(180, Math.min(qrboxSize, 300)),
+            height: Math.max(180, Math.min(qrboxSize, 300)),
+          };
+        },
+        aspectRatio: 1.0,
       };
 
       const scanCallback = (decodedText) => {
         handleScan(decodedText);
       };
 
-      // Standard environment camera with fallback to user camera
+      // Direct camera launch with automatic rear/webcam fallback
+      let started = false;
+
+      // Attempt 1: Query cameras and pick environment/rear on mobile or default on PC
       try {
-        await qrScanner.start({ facingMode: { ideal: 'environment' } }, qrConfig, scanCallback, () => {});
-      } catch (startErr) {
-        console.warn('Environment camera start failed, falling back to default camera:', startErr);
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length > 0) {
+          const rearCam = cameras.find(c => /back|rear|environment|facing\s*back/i.test(c.label || ''));
+          const targetCamId = rearCam ? rearCam.id : cameras[0].id;
+          await qrScanner.start(targetCamId, qrConfig, scanCallback, () => {});
+          started = true;
+        }
+      } catch (camListErr) {
+        console.warn('getCameras query failed, falling back to facingMode constraints:', camListErr);
+      }
+
+      // Attempt 2: facingMode environment (ideal for mobile)
+      if (!started) {
+        try {
+          await qrScanner.start({ facingMode: 'environment' }, qrConfig, scanCallback, () => {});
+          started = true;
+        } catch (envErr) {
+          console.warn('Environment facingMode failed, falling back to user camera:', envErr);
+        }
+      }
+
+      // Attempt 3: facingMode user (ideal for laptop webcam)
+      if (!started) {
         await qrScanner.start({ facingMode: 'user' }, qrConfig, scanCallback, () => {});
+        started = true;
       }
 
       setScanning(true);
@@ -199,7 +210,7 @@ export default function ScanPage() {
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setError('No camera detected on this device. Please use the Manual Entry tab below.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera is currently in use by another application or browser tab. Please close other camera tabs and try again.');
+        setError('Camera is currently busy or in use by another tab/app. Please close other camera apps and try again.');
       } else {
         setError(err.message || 'Could not start camera. Please use Manual Entry.');
       }
