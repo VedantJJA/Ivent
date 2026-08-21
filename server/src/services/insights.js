@@ -48,13 +48,41 @@ async function getEventStats(eventId) {
   return stats;
 }
 
+function computeDeterministicFallback(question, stats) {
+  const q = (question || '').toLowerCase();
+  if (q.includes('how many people') || q.includes('checked in') || q.includes('so far')) {
+    return `So far, ${stats.checkedIn} of ${stats.registered} registered attendee(s) have checked in (${stats.notCheckedIn} pending check-in).`;
+  }
+  if (q.includes('no-show') || q.includes('percentage') || q.includes('rate')) {
+    return `Currently, ${stats.noShowPercent} of registered attendees (${stats.notCheckedIn} attendee(s)) have not yet checked in.`;
+  }
+  if (q.includes('peak') || q.includes('time')) {
+    if (stats.peakCheckInTime && stats.peakCheckInCount > 0) {
+      const peakTimeStr = new Date(stats.peakCheckInTime).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      return `Check-ins peaked around ${peakTimeStr} with ${stats.peakCheckInCount} arrival(s) in a 15-minute window.`;
+    }
+    return 'No check-ins have been recorded yet to determine a peak arrival window.';
+  }
+  if (q.includes('spots') || q.includes('left') || q.includes('remaining') || q.includes('capacity')) {
+    return `There are ${stats.spotsLeft} spot(s) remaining out of total capacity ${stats.capacity} (${stats.registered} registered).`;
+  }
+  // Generic deterministic fallback
+  return `Event Summary: ${stats.checkedIn} checked in, ${stats.notCheckedIn} pending, ${stats.spotsLeft} spots remaining out of capacity ${stats.capacity} (${stats.noShowPercent} no-show rate).`;
+}
+
 async function getInsight(question, stats) {
+  const fallbackAnswer = computeDeterministicFallback(question, stats);
   const apiKey = process.env.XAI_API_KEY;
+
   if (!apiKey) {
     return {
-      answer: null,
+      answer: fallbackAnswer,
       rawStats: stats,
-      note: 'AI insights unavailable: no API key configured. Showing raw stats instead.',
+      isFallback: true,
+      note: 'Deterministic SQL Fallback: AI API key not configured.',
     };
   }
 
@@ -87,13 +115,14 @@ async function getInsight(question, stats) {
     );
 
     clearTimeout(timeout);
-    return { answer: completion.choices[0].message.content, rawStats: stats };
+    return { answer: completion.choices[0].message.content, rawStats: stats, isFallback: false };
   } catch (err) {
     console.error('AI insight error:', err.message);
     return {
-      answer: null,
+      answer: fallbackAnswer,
       rawStats: stats,
-      note: 'AI request failed or timed out. Showing raw stats instead.',
+      isFallback: true,
+      note: 'Deterministic SQL Fallback: AI request timed out or unavailable.',
     };
   }
 }

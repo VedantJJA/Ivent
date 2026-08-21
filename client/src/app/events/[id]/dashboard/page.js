@@ -9,6 +9,13 @@ import {
   SparklesIcon, LoaderIcon, ClockIcon
 } from '@/components/Icons';
 
+const SUGGESTED_QUERIES = [
+  'How many people have checked in so far?',
+  'What percentage of registered attendees are no-shows?',
+  'What time did check-ins peak?',
+  'How many spots are left?',
+];
+
 export default function DashboardPage() {
   const { id } = useParams();
   const { user, loading: authLoading } = useAuth();
@@ -71,19 +78,28 @@ export default function DashboardPage() {
     window.open(`${getApiUrl()}/events/${id}/export.csv?token=${token}`, '_blank');
   };
 
-  const handleAskInsight = async (e) => {
-    e.preventDefault();
-    if (!question.trim()) return;
+  const executeInsight = async (queryText) => {
+    if (!queryText.trim()) return;
     setInsightLoading(true);
     setInsight(null);
     try {
-      const data = await apiPost(`/events/${id}/insights`, { question });
+      const data = await apiPost(`/events/${id}/insights`, { question: queryText });
       setInsight(data);
     } catch (err) {
-      setInsight({ note: err.message });
+      setInsight({ answer: null, note: err.message, isFallback: true });
     } finally {
       setInsightLoading(false);
     }
+  };
+
+  const handleAskInsight = async (e) => {
+    e.preventDefault();
+    executeInsight(question);
+  };
+
+  const handleSelectQuery = (queryText) => {
+    setQuestion(queryText);
+    executeInsight(queryText);
   };
 
   if (authLoading || loading) {
@@ -247,10 +263,33 @@ export default function DashboardPage() {
 
       {/* AI Insights */}
       <div className="insights-panel">
-        <h3>
-          <SparklesIcon size={20} />
-          AI Insights
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+          <h3 style={{ margin: 0 }}>
+            <SparklesIcon size={20} color="var(--color-primary-400)" />
+            AI Insights (Grok-3 Powered)
+          </h3>
+          <span className="badge badge-primary">Live Context Telemetry</span>
+        </div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>
+          Click an autofill prompt below or ask any question regarding check-ins, attendance rates, and event capacity.
+        </p>
+
+        {/* Suggestion Chips / Autofill Bubbles */}
+        <div className="insights-bubbles-container">
+          {SUGGESTED_QUERIES.map((qText, idx) => (
+            <button
+              key={idx}
+              type="button"
+              className="insights-bubble-btn"
+              onClick={() => handleSelectQuery(qText)}
+              disabled={insightLoading}
+            >
+              <SparklesIcon size={12} />
+              {qText}
+            </button>
+          ))}
+        </div>
+
         <form onSubmit={handleAskInsight}>
           <div className="insights-input-row">
             <input
@@ -269,14 +308,22 @@ export default function DashboardPage() {
             </button>
           </div>
         </form>
+
         {insight && (
           <div className="insights-answer">
-            {insight.answer || insight.note || 'No response available'}
-            {insight.rawStats && !insight.answer && (
-              <pre style={{ marginTop: 'var(--space-sm)', fontSize: '0.8rem' }}>
-                {JSON.stringify(insight.rawStats, null, 2)}
-              </pre>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--color-primary-400)', fontSize: '0.85rem' }}>
+                {insight.isFallback ? '⚡ Deterministic SQL Fallback' : '✨ Grok-3 Intelligence Response'}
+              </span>
+              {insight.note && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  {insight.note}
+                </span>
+              )}
+            </div>
+            <div style={{ color: 'var(--color-text-primary)' }}>
+              {insight.answer || insight.note || 'No response available'}
+            </div>
           </div>
         )}
       </div>

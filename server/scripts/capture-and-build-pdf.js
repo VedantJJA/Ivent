@@ -332,15 +332,22 @@ async function captureScreenshots(data) {
   // 7. AI Insights Panel
   console.log('Capturing: 07-ai-insights.png');
   await page.evaluate(() => {
-    const input = document.querySelector('.insights-input-row input') || document.querySelector('input[placeholder*="Ask"]');
-    if (input) {
-      input.value = 'How many people have checked in so far?';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+    const bubbles = Array.from(document.querySelectorAll('.insights-bubble-btn'));
+    if (bubbles.length > 0) {
+      bubbles[0].click();
+    } else {
+      const input = document.querySelector('.insights-input-row input') || document.querySelector('input[placeholder*="Ask"]');
+      if (input) {
+        input.value = 'How many people have checked in so far?';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const askBtn = document.querySelector('.insights-input-row button');
+      if (askBtn) askBtn.click();
     }
-    const askBtn = document.querySelector('.insights-input-row button');
-    if (askBtn) askBtn.click();
+    const panel = document.querySelector('.insights-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'instant', block: 'center' });
   });
-  await new Promise((r) => setTimeout(r, 2000));
+  await new Promise((r) => setTimeout(r, 2200));
   await page.screenshot({ path: path.join(screenshotsDir, '07-ai-insights.png'), fullPage: false });
 
   // 8. CSV Export View
