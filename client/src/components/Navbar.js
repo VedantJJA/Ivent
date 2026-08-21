@@ -7,13 +7,18 @@ import {
   CalendarIcon, PlusIcon, LogInIcon, LogOutIcon, TicketIcon,
   MenuIcon, XIcon, ShieldIcon, UsersIcon
 } from '@/components/Icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Navbar() {
   const { user, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const isLoginPage = pathname === '/login';
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isOrganizer = !user?.is_admin && user?.clubs && user.clubs.length > 0;
   const isAdmin = !!user?.is_admin;
@@ -40,7 +45,7 @@ export default function Navbar() {
             <span>Events</span>
           </Link>
 
-          {!loading && user && (
+          {mounted && !loading && user && (
             <>
               {/* Organizer-only links */}
               {isOrganizer && (
@@ -76,7 +81,7 @@ export default function Navbar() {
 
           <div className="navbar-spacer" />
 
-          {!loading && (
+          {mounted && !loading && (
             <>
               {user ? (
                 <div className="navbar-user">

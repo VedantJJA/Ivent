@@ -15,8 +15,10 @@ export default function HomePage() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     // Load from local storage cache first for instant offline rendering
     try {
       const cached = localStorage.getItem('ivent_cached_events');
@@ -64,7 +66,7 @@ export default function HomePage() {
           Discover, register, and check in to campus and community events.
         </p>
         <div className="hero-actions">
-          {user ? (
+          {mounted && user ? (
             isAdmin ? (
               <Link href="/admin" className="btn btn-primary btn-lg">
                 <ShieldIcon size={20} />
@@ -87,11 +89,13 @@ export default function HomePage() {
                 My Tickets
               </Link>
             )
-          ) : (
+          ) : mounted && !user ? (
             <Link href="/login" className="btn btn-primary btn-lg">
               <LogInIcon size={20} />
               Sign In to Participate
             </Link>
+          ) : (
+            <div style={{ minHeight: '48px' }} />
           )}
         </div>
       </section>
