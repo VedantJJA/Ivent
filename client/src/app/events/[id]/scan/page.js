@@ -711,6 +711,18 @@ export default function ScanPage() {
               </div>
             </div>
           )}
+
+          {scanning && (
+            <div className="scanner-target-overlay" aria-hidden="true">
+              <div className="scanner-target-box">
+                <div className="scanner-corner corner-tl" />
+                <div className="scanner-corner corner-tr" />
+                <div className="scanner-corner corner-bl" />
+                <div className="scanner-corner corner-br" />
+                <div className="scanner-laser-line" />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>

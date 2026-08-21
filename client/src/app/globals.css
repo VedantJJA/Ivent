@@ -591,6 +591,139 @@ a {
   color: var(--color-text-muted);
 }
 
+/* ---- QR Camera Scanner & Viewport ---- */
+.scanner-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  background: #030712;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+#qr-reader {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  background: transparent !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+#qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  border-radius: var(--radius-xl) !important;
+  display: block !important;
+  transform: none !important;
+}
+
+#qr-reader canvas {
+  display: none !important;
+}
+
+#qr-reader #qr-shaded-region {
+  display: none !important;
+}
+
+#qr-reader img[alt="Info icon"] {
+  display: none !important;
+}
+
+.scanner-target-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+}
+
+.scanner-target-box {
+  position: relative;
+  width: 250px;
+  height: 250px;
+  max-width: 72%;
+  max-height: 72%;
+  aspect-ratio: 1 / 1;
+  box-shadow: 0 0 0 9999px rgba(11, 17, 32, 0.4);
+  border-radius: 14px;
+}
+
+.scanner-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-color: #38bdf8;
+  border-style: solid;
+  border-width: 0;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+
+.corner-tl {
+  top: 0;
+  left: 0;
+  border-top-width: 4px;
+  border-left-width: 4px;
+  border-top-left-radius: 10px;
+}
+
+.corner-tr {
+  top: 0;
+  right: 0;
+  border-top-width: 4px;
+  border-right-width: 4px;
+  border-top-right-radius: 10px;
+}
+
+.corner-bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 4px;
+  border-left-width: 4px;
+  border-bottom-left-radius: 10px;
+}
+
+.corner-br {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 4px;
+  border-right-width: 4px;
+  border-bottom-right-radius: 10px;
+}
+
+.scanner-laser-line {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 2.5px;
+  background: linear-gradient(90deg, transparent, #38bdf8, #818cf8, transparent);
+  box-shadow: 0 0 12px 2px rgba(56, 189, 248, 0.8);
+  animation: scanLaser 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes scanLaser {
+  0% {
+    top: 8px;
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 10px);
+    opacity: 0.8;
+  }
+}
+
 /* ---- Auth Panel ---- */
 .auth-container {
   display: flex;
