@@ -660,7 +660,12 @@ async function generatePdfReport(concurrencyOutput) {
         </div>
         <div class="req-box hard">
           <div class="req-title"><span class="badge badge-purple">Hard Req 1</span> Duplicate Prevention & Capacity</div>
-          <div>Solved via single atomic SQL update: <code>UPDATE events SET registered_count = registered_count + 1 WHERE id = $1 AND registered_count &lt; capacity</code> and <code>UPDATE registrations SET checked_in_at = NOW() WHERE id = $1 AND checked_in_at IS NULL</code>, eliminating read-then-write race gaps.</div>
+          <div>Solved via single-statement atomic SQL updates eliminating race gaps:</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 7.2pt; color: #0369a1; background: #f0f9ff; padding: 4px 6px; border-radius: 4px; margin: 3px 0; border: 1px solid #bae6fd; line-height: 1.35;">
+            <div>• <code>UPDATE events SET registered_count = registered_count + 1 WHERE id = $1 AND registered_count &lt; capacity</code></div>
+            <div style="margin-top:2px;">• <code>UPDATE registrations SET checked_in_at = NOW() WHERE id = $1 AND checked_in_at IS NULL</code></div>
+          </div>
+          <div>Guarantees zero overbooking and exactly one accepted check-in under high concurrency.</div>
         </div>
         <div class="req-box hard">
           <div class="req-title"><span class="badge badge-purple">Hard Req 2</span> Anti QR-Sharing (Rotating TOTP)</div>
@@ -672,7 +677,7 @@ async function generatePdfReport(concurrencyOutput) {
         </div>
         <div class="req-box hard">
           <div class="req-title"><span class="badge badge-purple">Hard Req 4</span> AI Insights (Context-Grounded)</div>
-          <div>Natural language queries compute verified SQL metrics (checked-in counts, no-show rates, peak arrival windows, remaining seats) first, feeding them as deterministic context to GPT-4o with offline heuristic fallbacks.</div>
+          <div>Natural language queries compute verified SQL metrics (checked-in counts, no-show rates, peak arrival windows, remaining seats) first, feeding them as deterministic context to <strong>Grok-3 (xAI API)</strong> with offline heuristic fallbacks.</div>
         </div>
       </div>
 
@@ -717,7 +722,7 @@ async function generatePdfReport(concurrencyOutput) {
         <div class="screenshot-frame">
           <img src="${img3}" alt="Rotating TOTP Ticket">
         </div>
-        <div class="screenshot-caption">Ticket rendering live rotating QR code payload <code>REG_&lt;id&gt;.&lt;6-digit-code&gt;</code> with synchronized countdown timer, completely preventing screenshot forwarding.</div>
+        <div class="screenshot-caption">Ticket rendering live rotating QR payload <code>REG_&lt;ticket_registration_uuid&gt;.&lt;6-digit-totp-code&gt;</code> with synchronized 30-second countdown timer, completely preventing screenshot forwarding.</div>
       </div>
 
       <!-- PAGE 3: SCREENSHOTS 4 TO 7 -->
@@ -761,13 +766,13 @@ async function generatePdfReport(concurrencyOutput) {
 
       <div class="screenshot-container">
         <div class="screenshot-header">
-          <span class="screenshot-title">7. AI-Powered Event Insights Panel</span>
+          <span class="screenshot-title">7. AI-Powered Event Insights Panel (Grok-3 Powered)</span>
           <span class="badge badge-purple">Hard Req 4 Proof</span>
         </div>
         <div class="screenshot-frame">
           <img src="${img7}" alt="AI Insights Panel">
         </div>
-        <div class="screenshot-caption">Natural language query panel computing verified database statistics first and returning structured operational answers.</div>
+        <div class="screenshot-caption">Natural language query panel computing verified database statistics first and returning structured operational answers via Grok-3 (xAI API).</div>
       </div>
 
       <div class="screenshot-container">
