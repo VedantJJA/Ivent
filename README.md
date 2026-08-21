@@ -7,8 +7,8 @@ Ivent is a full-stack, offline-capable event check-in and management platform. I
 ## Architecture Overview
 
 - **Frontend (`/client`)**: Next.js (App Router), React, Vanilla CSS design system, HTML5-QRCode scanner, PWA Service Worker with offline caching, Browser WebCrypto TOTP engine.
-- **Backend (`/server`)**: Node.js, Express, Socket.io for live check-in telemetry, PostgreSQL connection pool (`pg`), OTPLib TOTP validator, JSON Web Tokens (JWT), bcrypt password hashing.
-- **Database (`PostgreSQL`)**: Relational database with transactional isolation, unique registration number indexing, and append-only scan audit logging.
+- **Backend (`/server`)**: Node.js, Express, Socket.io for live check-in telemetry, PostgreSQL connection pool (`pg`), OTPLib TOTP validator, JSON Web Tokens (JWT), Argon2 password hashing.
+- **Database (`PostgreSQL`)**: Relational database with transactional isolation, email indexing, and append-only scan audit logging.
 
 ---
 
@@ -123,7 +123,7 @@ npm run dev
 
 ### 1. System Developer / Admin
 - Identified strictly by the `ADMIN_EMAIL` environment variable.
-- Accesses `/admin` to create clubs, delete clubs, link organizers to clubs, view all users and events, and delete events.
+- Accesses `/admin` to create clubs, delete clubs, link organizers to clubs by email, view all users and events, and delete events.
 - Cannot join, register for, or participate in events directly.
 
 ### 2. Club Organizers
@@ -131,12 +131,12 @@ npm run dev
 - Accesses `/my-clubs` to view hosted events and create new club events.
 - Accesses `/events/[id]/dashboard` for live check-in telemetry, attendee rosters, and CSV exports.
 - Accesses `/events/[id]/scan` to scan QR codes or manually check in attendees.
+- Prevented from registering as attendees for events hosted by their clubs.
 
 ### 3. Attendees
 - Browse upcoming events on `/` without logging in.
-- Sign up with an Email, Password, and optional Registration Number / Student ID.
+- Sign up and sign in with **Email Address and Password only**.
 - Register for events and access dynamic rotating QR tickets under `/my-registrations` and `/my-ticket/[regId]`.
-- Log in using either their Email Address or Registration Number.
 
 ---
 
@@ -152,7 +152,7 @@ npm run dev
    - 3-second cooldown throttle prevents duplicate frame reads.
 
 3. **Manual Check-In**:
-   - Supports check-in by entering the attendee's Email Address or Registration Number alongside their active 6-digit ticket Auth Code.
+   - Supports check-in by entering the attendee's **Email Address** alongside their active 6-digit ticket Auth Code.
 
 4. **Offline PWA & Auto-Sync**:
    - Automatically detects internet loss and switches to Offline Mode.
@@ -165,15 +165,23 @@ npm run dev
 
 Direct test scripts are provided to verify all core workflows, edge cases, and high-concurrency race conditions:
 
-### 1. End-to-End API Test Suite
-Tests user signup, registration number indexing, organizer club assignments, event creation, ticket retrieval, 30-second TOTP generation, online check-in, duplicate scan rejection, offline batch sync, and club deletion:
+### 1. PDF Requirements Test Suite
+Tests all 7 core requirements and 4 hard requirements outlined in the 2nd and 3rd year task specification:
+
+```bash
+cd server
+node scripts/test-pdf-requirements.js
+```
+
+### 2. End-to-End API Test Suite
+Tests user signup, authentication, organizer club assignments, event creation, ticket retrieval, 30-second TOTP generation, online check-in, duplicate scan rejection, offline batch sync, and club deletion:
 
 ```bash
 cd server
 node scripts/test-api.js
 ```
 
-### 2. Concurrency and Race-Condition Load Test
+### 3. Concurrency and Race-Condition Load Test
 Fires 100 simultaneous concurrent registrations at a capacity-30 event to prove atomic locking and zero overselling, followed by 20 simultaneous duplicate check-in scans:
 
 ```bash
@@ -181,9 +189,9 @@ cd server
 node scripts/test-concurrency.js
 ```
 
-### 3. Run All Tests
+### 4. Run All Tests
 ```bash
-# Via PowerShell script (root directory)
+# Via PowerShell script (root directory - auto starts test server if needed)
 .\run.ps1 test
 
 # Via npm (from root or server directory)
@@ -197,7 +205,7 @@ npm test
 The repository includes a ready-to-deploy `render.yaml` infrastructure Blueprint:
 
 1. Push your repository to GitHub.
-2. Log into [Render](https://dashboard.render.com).
+2. Log into Render.
 3. Click **New +** -> **Blueprint**.
 4. Connect this repository. Render will automatically provision:
    - `ivent-db`: Managed PostgreSQL instance.
@@ -213,13 +221,13 @@ The repository includes a ready-to-deploy `render.yaml` infrastructure Blueprint
 - `.\run.ps1 dev`: Start both backend and frontend for local development.
 - `.\run.ps1 setup`: Install all dependencies across client and server.
 - `.\run.ps1 db-init`: Run database schema creation and migrations.
-- `.\run.ps1 test`: Run all API and concurrency test suites.
+- `.\run.ps1 test`: Run PDF requirements, API, and concurrency test suites.
 - `.\run.ps1 proof`: Run concurrency load testing.
 - `.\run.ps1 build`: Build the production client bundle.
-- `npm test`: Run backend test suites.
+- `npm test`: Run complete test suites.
 
 ### Server Directory (`/server`)
-- `npm test`: Run both API and concurrency test suites.
+- `npm test`: Run PDF, API, and concurrency test suites.
 - `npm run test:api`: Execute direct end-to-end API test script.
 - `npm run test:concurrency`: Execute direct concurrency load test script.
 - `npm run dev`: Start Express backend with nodemon file watcher.
