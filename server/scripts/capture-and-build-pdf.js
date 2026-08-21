@@ -667,6 +667,10 @@ async function generatePdfReport(concurrencyOutput) {
         <p>MIC Recruitment 2nd & 3rd Year Task • Production-Ready Offline-First Check-In & Telemetry Engine</p>
       </div>
 
+      <div style="margin-bottom:10pt; padding:9px 13px; background:#eff6ff; border:1.5px solid #bfdbfe; border-left:4px solid #2563eb; border-radius:6px; font-size:8.2pt; color:#1e40af; line-height:1.45;">
+        <strong>Evaluation Access &amp; Test Logins:</strong> Detailed test logins for pre-configured Organizers and Attendees are provided at the bottom of this document (Section 5). Note that Organizer permissions can only be granted/assigned by the System Admin. Any attendee can register directly without admin intervention. Note that there is currently no email verification/validation required (for friction-free testing), though email validation/magic links can be integrated.
+      </div>
+
       <div class="section-card">
         <h3 style="margin-top:0;">1. Short Project Description</h3>
         <p>
@@ -838,20 +842,61 @@ async function generatePdfReport(concurrencyOutput) {
         <div class="screenshot-caption">Admin control console for club creation, organizer linking, event cascading oversight, and role governance.</div>
       </div>
 
-      <!-- PAGE 5: CONCURRENCY & RACE-CONDITION PROOF -->
+      <!-- PAGE 5: CONCURRENCY PROOF & DEMO CREDENTIALS -->
       <div class="page-break"></div>
       <h2>4. Concurrency & Race-Condition Proof (Hard Requirement 1)</h2>
-      <p style="font-size:8.5pt; color:#475569; margin-bottom:8pt;">
+      <p style="font-size:8.5pt; color:#475569; margin-bottom:6pt;">
         The test suite below fires <strong>100 simultaneous registration requests</strong> against an event with capacity 30, and <strong>20 concurrent check-in scans</strong> on the exact same ticket, proving zero overbooking and exactly one accepted check-in.
       </p>
 
       <div class="terminal-block">${concurrencyOutput}</div>
 
-      <div style="margin-top:14pt; padding:12px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; border-radius:6px; font-size:8.5pt; color:#166534; line-height:1.5;">
+      <h2 style="margin-top:12pt;">5. Pre-Seeded Demo &amp; Evaluation Accounts</h2>
+      <p style="font-size:8.2pt; color:#475569; margin-bottom:6pt;">
+        Pre-configured evaluation credentials ready for immediate role-based testing:
+      </p>
+
+      <div class="grid-2">
+        <div style="background:#ffffff; border:1px solid #cbd5e1; border-top:3.5px solid #0284c7; border-radius:6px; padding:8px 10px;">
+          <div style="font-weight:700; color:#0369a1; font-size:8.5pt; margin-bottom:2pt; display:flex; justify-content:space-between; align-items:center;">
+            <span>Organizer Logins</span>
+            <span class="badge">Assigned by Admin</span>
+          </div>
+          <p style="font-size:7.5pt; color:#64748b; margin-bottom:4pt;">Organizers can only be assigned/linked to clubs by the Admin.</p>
+          <table style="margin-bottom:0; font-size:7.5pt;">
+            <tr><th>Account Email</th><th>Password</th><th>Assigned Club</th></tr>
+            <tr><td><code>org1@test.com</code></td><td><code>12341234</code></td><td>Tech Club</td></tr>
+            <tr><td><code>org2@test.com</code></td><td><code>12341234</code></td><td>Design Club</td></tr>
+            <tr><td><code>org3@test.com</code></td><td><code>12341234</code></td><td>Robotics Club</td></tr>
+          </table>
+          <div style="font-size:7.2pt; color:#0369a1; font-weight:600; margin-top:3pt;">All 3 organizer accounts share password: <code>12341234</code></div>
+        </div>
+
+        <div style="background:#ffffff; border:1px solid #cbd5e1; border-top:3.5px solid #10b981; border-radius:6px; padding:8px 10px;">
+          <div style="font-weight:700; color:#047857; font-size:8.5pt; margin-bottom:2pt; display:flex; justify-content:space-between; align-items:center;">
+            <span>Attendee Logins</span>
+            <span class="badge badge-success">Self-Serve</span>
+          </div>
+          <p style="font-size:7.5pt; color:#64748b; margin-bottom:4pt;">Attendees can register directly without admin intervention. Pre-seeded IDs:</p>
+          <table style="margin-bottom:0; font-size:7.5pt;">
+            <tr><th>Account Email</th><th>Password</th><th>Role</th></tr>
+            <tr><td><code>at1@test.com</code></td><td><code>43214321</code></td><td>Attendee</td></tr>
+            <tr><td><code>at2@test.com</code></td><td><code>43214321</code></td><td>Attendee</td></tr>
+            <tr><td><code>at3@test.com</code></td><td><code>43214321</code></td><td>Attendee</td></tr>
+          </table>
+          <div style="font-size:7.2pt; color:#047857; font-weight:600; margin-top:3pt;">All 3 attendee accounts share password: <code>43214321</code></div>
+        </div>
+      </div>
+
+      <div style="margin-top:6pt; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:7.5pt; color:#475569; line-height:1.4;">
+        <strong>Email Validation Note:</strong> There is currently no mandatory email verification or format validation in place to allow instant, friction-free testing with any demo ID (though standard regex formatting and SMTP/magic-link verification can easily be added).
+      </div>
+
+      <div style="margin-top:8pt; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; border-radius:6px; font-size:8pt; color:#166534; line-height:1.45;">
         <strong>Note:</strong> I could have manually made the PDF but I chose to use antigravity cause it can make a PDF with better formatting than me , which I just discovered when making the PDF for the MIC project. Hope I get selected :)
       </div>
 
-      <div style="margin-top:10pt; padding:8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:7.5pt; color:#64748b; text-align:center;">
+      <div style="margin-top:8pt; padding:6px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:7.2pt; color:#64748b; text-align:center;">
         Generated automatically by Ivent Verification Engine • All 27 Checklist Items &amp; 4 Hard Problems Verified
       </div>
 
