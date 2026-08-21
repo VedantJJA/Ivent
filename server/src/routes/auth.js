@@ -82,13 +82,13 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanIdentifier = email.toLowerCase().trim();
     const result = await db.query(
-      'SELECT id, email, password_hash, reg_number, created_at FROM users WHERE email = $1',
-      [cleanEmail]
+      'SELECT id, email, password_hash, reg_number, created_at FROM users WHERE LOWER(email) = $1 OR (reg_number IS NOT NULL AND LOWER(reg_number) = $1)',
+      [cleanIdentifier]
     );
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid email/reg number or password' });
     }
 
     const user = result.rows[0];

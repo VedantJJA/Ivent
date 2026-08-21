@@ -7,7 +7,10 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "db:init": "node src/db-init.js",
-    "proof": "node scripts/proof.js"
+    "proof": "node scripts/test-concurrency.js",
+    "test": "node scripts/test-api.js && node scripts/test-concurrency.js",
+    "test:api": "node scripts/test-api.js",
+    "test:concurrency": "node scripts/test-concurrency.js"
   },
   "dependencies": {
     "argon2": "^0.41.1",

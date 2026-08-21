@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node -e \"console.log('Use .\\\\run.ps1 dev or npm run dev in server and client dirs')\"",
     "build": "npm --prefix client run build",
-    "db:init": "npm --prefix server run db:init"
+    "db:init": "npm --prefix server run db:init",
+    "test": "npm --prefix server run test"
   }
 }

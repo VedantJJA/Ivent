@@ -1,10 +1,10 @@
 # Ivent - Setup and Run Script
 # Usage: .\run.ps1 [command]
-# Commands: setup, server, client, dev, db-init, build, proof
+# Commands: setup, server, client, dev, db-init, build, proof, test
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("setup", "server", "client", "dev", "db-init", "build", "proof")]
+    [ValidateSet("setup", "server", "client", "dev", "db-init", "build", "proof", "test")]
     [string]$Command = "dev"
 )
 
@@ -49,9 +49,20 @@ function Build-Client {
 }
 
 function Run-Proof {
-    Write-Host "`nRunning Concurrency Proof Script..." -ForegroundColor Cyan
+    Write-Host "`nRunning Concurrency Load Test..." -ForegroundColor Cyan
     Push-Location $ServerDir
-    npm run proof
+    node scripts/test-concurrency.js
+    Pop-Location
+}
+
+function Run-Test {
+    Write-Host "`nRunning End-to-End API Test Suite..." -ForegroundColor Cyan
+    Push-Location $ServerDir
+    node scripts/test-api.js
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "`nRunning Concurrency & Race-Condition Suite..." -ForegroundColor Cyan
+        node scripts/test-concurrency.js
+    }
     Pop-Location
 }
 
@@ -110,6 +121,7 @@ switch ($Command) {
     "client" { Start-Client }
     "build" { Build-Client }
     "proof" { Run-Proof }
+    "test" { Run-Test }
     "dev" { Start-Dev }
     "db-init" { Initialize-Database }
 }

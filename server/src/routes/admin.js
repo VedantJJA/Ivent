@@ -188,11 +188,23 @@ router.post('/clubs/:clubId/members', async (req, res) => {
       });
     }
 
+    let addedByUserId = null;
+    if (req.user?.id) {
+      try {
+        const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [req.user.id]);
+        if (userCheck.rows.length > 0) {
+          addedByUserId = userCheck.rows[0].id;
+        }
+      } catch {
+        // ignore if not a UUID
+      }
+    }
+
     await db.query(
       `INSERT INTO club_members (club_id, user_id, added_by)
        VALUES ($1, $2, $3)
        ON CONFLICT (club_id, user_id) DO NOTHING`,
-      [clubId, targetUserId, req.user.id]
+      [clubId, targetUserId, addedByUserId]
     );
 
     res.status(201).json({ message: 'Organizer linked to club successfully' });

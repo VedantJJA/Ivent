@@ -161,16 +161,34 @@ npm run dev
 
 ---
 
-## Concurrency Testing
+## Automated Testing Suites
 
-To verify concurrency safety and atomic capacity reservation under heavy traffic loads:
+Direct test scripts are provided to verify all core workflows, edge cases, and high-concurrency race conditions:
+
+### 1. End-to-End API Test Suite
+Tests user signup, registration number indexing, organizer club assignments, event creation, ticket retrieval, 30-second TOTP generation, online check-in, duplicate scan rejection, offline batch sync, and club deletion:
 
 ```bash
 cd server
-npm run proof
+node scripts/test-api.js
 ```
 
-The test script spawns simultaneous concurrent registrations against a limited-capacity event, demonstrating that zero overselling occurs.
+### 2. Concurrency and Race-Condition Load Test
+Fires 100 simultaneous concurrent registrations at a capacity-30 event to prove atomic locking and zero overselling, followed by 20 simultaneous duplicate check-in scans:
+
+```bash
+cd server
+node scripts/test-concurrency.js
+```
+
+### 3. Run All Tests
+```bash
+# Via PowerShell script (root directory)
+.\run.ps1 test
+
+# Via npm (from root or server directory)
+npm test
+```
 
 ---
 
@@ -195,14 +213,18 @@ The repository includes a ready-to-deploy `render.yaml` infrastructure Blueprint
 - `.\run.ps1 dev`: Start both backend and frontend for local development.
 - `.\run.ps1 setup`: Install all dependencies across client and server.
 - `.\run.ps1 db-init`: Run database schema creation and migrations.
-- `.\run.ps1 build`: Build the production client bundle.
+- `.\run.ps1 test`: Run all API and concurrency test suites.
 - `.\run.ps1 proof`: Run concurrency load testing.
+- `.\run.ps1 build`: Build the production client bundle.
+- `npm test`: Run backend test suites.
 
 ### Server Directory (`/server`)
+- `npm test`: Run both API and concurrency test suites.
+- `npm run test:api`: Execute direct end-to-end API test script.
+- `npm run test:concurrency`: Execute direct concurrency load test script.
 - `npm run dev`: Start Express backend with nodemon file watcher.
 - `npm start`: Start Express backend in production mode.
 - `npm run db:init`: Execute schema SQL definitions on PostgreSQL.
-- `npm run proof`: Execute concurrency reservation proof.
 
 ### Client Directory (`/client`)
 - `npm run dev`: Start Next.js development server with Turbopack.
