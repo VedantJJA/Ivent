@@ -344,10 +344,19 @@ async function captureScreenshots(data) {
       const askBtn = document.querySelector('.insights-input-row button');
       if (askBtn) askBtn.click();
     }
-    const panel = document.querySelector('.insights-panel');
-    if (panel) panel.scrollIntoView({ behavior: 'instant', block: 'center' });
   });
-  await new Promise((r) => setTimeout(r, 2200));
+  await page.waitForSelector('.insights-answer', { timeout: 6000 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 500));
+  await page.evaluate(() => {
+    const panel = document.querySelector('.insights-panel');
+    if (panel) {
+      const rect = panel.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const targetY = scrollTop + rect.top - 120; // Position panel prominently in upper-center of screen
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'instant' });
+    }
+  });
+  await new Promise((r) => setTimeout(r, 400));
   await page.screenshot({ path: path.join(screenshotsDir, '07-ai-insights.png'), fullPage: false });
 
   // 8. CSV Export View
