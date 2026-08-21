@@ -78,7 +78,7 @@ export default function MyTicketPage() {
   const qrLibRef = useRef(null);
   const lastCodeRef = useRef('');
 
-  // Redirect if not logged in
+  // Redirect if not logged in (only after auth finishes loading)
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
@@ -98,6 +98,7 @@ export default function MyTicketPage() {
 
     let hasCachedSecret = false;
     try {
+      // 1. Check direct ticket cache
       const cached = localStorage.getItem(`ivent_ticket_${regId}`);
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -108,35 +109,62 @@ export default function MyTicketPage() {
           setLoading(false);
         }
       }
+
+      // 2. Check registrations list cache if not found in direct cache
+      if (!hasCachedSecret) {
+        const listCached = localStorage.getItem('ivent_cached_my_registrations');
+        if (listCached) {
+          const list = JSON.parse(listCached);
+          const found = list.find((r) => r.id === regId);
+          if (found && found.totp_secret) {
+            setSecret(found.totp_secret);
+            const meta = {
+              eventName: found.event_name,
+              email: found.email || user.email,
+              regNumber: found.reg_number || user.reg_number,
+            };
+            setTicketMeta(meta);
+            hasCachedSecret = true;
+            setLoading(false);
+          }
+        }
+      }
     } catch {
       // ignore
     }
 
+    // Attempt live server fetch to ensure latest status
     apiGet(`/registrations/${regId}/secret`)
       .then((data) => {
-        setSecret(data.secret);
-        const meta = {
-          eventName: data.eventName,
-          email: data.email,
-          regNumber: data.regNumber,
-        };
-        setTicketMeta(meta);
-        try {
-          localStorage.setItem(`ivent_ticket_${regId}`, JSON.stringify({ secret: data.secret, ticketMeta: meta }));
-        } catch {
-          // ignore
+        if (data.checkedInAt) {
+          setCheckedIn(true);
+        }
+        if (data.secret) {
+          setSecret(data.secret);
+          const meta = {
+            eventName: data.eventName,
+            email: data.email,
+            regNumber: data.regNumber,
+          };
+          setTicketMeta(meta);
+          try {
+            localStorage.setItem(`ivent_ticket_${regId}`, JSON.stringify({ secret: data.secret, ticketMeta: meta }));
+          } catch {
+            // ignore
+          }
         }
       })
       .catch((err) => {
-        if (err.message.includes('checked')) {
+        if (err.message && err.message.includes('checked')) {
           setCheckedIn(true);
         }
-        if (!hasCachedSecret) {
+        // Only display error if we don't have a working cached secret
+        if (!hasCachedSecret && !secret) {
           setError(err.message);
         }
       })
       .finally(() => setLoading(false));
-  }, [regId, user]);
+  }, [regId, user, secret]);
 
   // Update QR code and countdown timer every second
   const updateTicket = useCallback(async () => {

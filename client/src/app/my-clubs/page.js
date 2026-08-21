@@ -30,9 +30,33 @@ export default function MyClubsPage() {
 
   useEffect(() => {
     if (user && !user.is_admin) {
+      // Load from local storage cache first
+      try {
+        const cached = localStorage.getItem('ivent_cached_organizer_clubs');
+        if (cached) {
+          setClubs(JSON.parse(cached));
+          setLoading(false);
+        }
+      } catch {
+        // ignore
+      }
+
       apiGet('/events/organizer/clubs')
-        .then((data) => setClubs(data.clubs || []))
-        .catch((err) => setError(err.message))
+        .then((data) => {
+          const clubList = data.clubs || [];
+          setClubs(clubList);
+          try {
+            localStorage.setItem('ivent_cached_organizer_clubs', JSON.stringify(clubList));
+          } catch {
+            // ignore
+          }
+        })
+        .catch((err) => {
+          const cached = localStorage.getItem('ivent_cached_organizer_clubs');
+          if (!cached) {
+            setError(err.message);
+          }
+        })
         .finally(() => setLoading(false));
     }
   }, [user]);

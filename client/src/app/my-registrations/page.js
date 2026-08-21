@@ -33,9 +33,23 @@ export default function MyRegistrationsPage() {
 
       apiGet('/registrations/my')
         .then((data) => {
-          setRegistrations(data.registrations || []);
+          const list = data.registrations || [];
+          setRegistrations(list);
           try {
-            localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(data.registrations || []));
+            localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(list));
+            // Pre-cache each ticket payload so rotating QR works offline immediately
+            list.forEach(reg => {
+              if (reg.totp_secret) {
+                localStorage.setItem(`ivent_ticket_${reg.id}`, JSON.stringify({
+                  secret: reg.totp_secret,
+                  ticketMeta: {
+                    eventName: reg.event_name,
+                    email: reg.email || user?.email,
+                    regNumber: reg.reg_number || user?.reg_number,
+                  }
+                }));
+              }
+            });
           } catch {
             // ignore
           }

@@ -186,8 +186,8 @@ export default function EventDetailPage() {
       )}
 
       <div className="event-detail-actions">
-        {/* Registration is only for non-admin users */}
-        {!isAdmin && !registration && !isPast && !isFull && (
+        {/* Registration is only for non-admin and non-organizer attendees */}
+        {!isAdmin && !isOrganizer && !registration && !isPast && !isFull && (
           <button
             className="btn btn-primary btn-lg"
             onClick={handleRegister}
