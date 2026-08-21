@@ -8,12 +8,25 @@ async function initDatabase() {
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     await db.query(schema);
 
-    // Schema cleanup migrations for legacy tables / redundant columns
+    // Schema cleanup migrations for legacy tables / redundant columns / foreign keys
     try {
       await db.query('ALTER TABLE users DROP COLUMN IF EXISTS is_admin;');
       await db.query('DROP TABLE IF EXISTS station_bundles;');
-    } catch {
-      // ignore
+      await db.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'scan_log_registration_id_fkey'
+          ) THEN
+            ALTER TABLE scan_log DROP CONSTRAINT scan_log_registration_id_fkey;
+            ALTER TABLE scan_log ADD CONSTRAINT scan_log_registration_id_fkey
+              FOREIGN KEY (registration_id) REFERENCES registrations(id) ON DELETE CASCADE;
+          END IF;
+        END $$;
+      `);
+    } catch (e) {
+      console.warn('Migration note:', e.message);
     }
 
     console.log('Database schema initialized successfully');

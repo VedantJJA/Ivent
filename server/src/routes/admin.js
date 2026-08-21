@@ -74,10 +74,22 @@ router.post('/clubs', async (req, res) => {
 // DELETE /admin/clubs/:id -- delete a club
 router.delete('/clubs/:id', async (req, res) => {
   try {
-    const result = await db.query('DELETE FROM clubs WHERE id = $1 RETURNING id, name', [req.params.id]);
+    const { id } = req.params;
+    // Find all events belonging to this club to broadcast deletion
+    const clubEvents = await db.query('SELECT id FROM events WHERE club_id = $1', [id]);
+    const result = await db.query('DELETE FROM clubs WHERE id = $1 RETURNING id, name', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Club not found' });
     }
+
+    const io = req.app.get('io');
+    if (io) {
+      clubEvents.rows.forEach(ev => {
+        io.to(`event:${ev.id}`).emit('event:deleted', { eventId: ev.id });
+        io.emit('event:deleted', { eventId: ev.id });
+      });
+    }
+
     res.json({ message: `Club "${result.rows[0].name}" deleted successfully` });
   } catch (err) {
     console.error('Admin delete club error:', err);
@@ -113,7 +125,14 @@ router.delete('/events/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Event not found' });
     }
-    res.json({ message: `Event "${result.rows[0].name}" deleted successfully` });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`event:${req.params.id}`).emit('event:deleted', { eventId: req.params.id });
+      io.emit('event:deleted', { eventId: req.params.id });
+    }
+
+    res.json({ message: `Event "${result.rows[0].name}" deleted successfully`, eventId: req.params.id });
   } catch (err) {
     console.error('Admin delete event error:', err);
     res.status(500).json({ error: 'Server error' });

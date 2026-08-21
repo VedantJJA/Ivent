@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS registrations (
 -- Append-only audit trail -- every scan attempt, not just winners.
 CREATE TABLE IF NOT EXISTS scan_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  registration_id UUID REFERENCES registrations(id),
+  registration_id UUID REFERENCES registrations(id) ON DELETE CASCADE,
   station_id TEXT NOT NULL,
   client_scan_id UUID NOT NULL,
   device_timestamp TIMESTAMPTZ NOT NULL,

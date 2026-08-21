@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet } from '@/lib/api';
-import { TicketIcon, ClockIcon, LoaderIcon, CheckCircleIcon } from '@/components/Icons';
+import { TicketIcon, ClockIcon, LoaderIcon, CheckCircleIcon, XCircleIcon } from '@/components/Icons';
 
 // RFC 4648 Base32 Decoder
 function base32Decode(base32) {
@@ -74,6 +75,7 @@ export default function MyTicketPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [checkedIn, setCheckedIn] = useState(false);
+  const [eventCancelled, setEventCancelled] = useState(false);
   const intervalRef = useRef(null);
   const qrLibRef = useRef(null);
   const lastCodeRef = useRef('');
@@ -155,18 +157,108 @@ export default function MyTicketPage() {
       .catch((err) => {
         if (err.message && err.message.includes('checked')) {
           setCheckedIn(true);
+          return;
         }
+
+        // If the event or registration was deleted/cancelled on server
+        if (err.message && (err.message.includes('404') || err.message.toLowerCase().includes('not found'))) {
+          try {
+            localStorage.removeItem(`ivent_ticket_${regId}`);
+            const listCached = localStorage.getItem('ivent_cached_my_registrations');
+            if (listCached) {
+              const list = JSON.parse(listCached).filter((r) => r.id !== regId);
+              localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(list));
+            }
+          } catch {
+            // ignore
+          }
+          setSecret(null);
+          setCurrentCode('------');
+          setQrDataUrl(null);
+          setEventCancelled(true);
+          return;
+        }
+
         // Only display error if we don't have a working cached secret
         if (!hasCachedSecret && !secret) {
           setError(err.message);
         }
       })
       .finally(() => setLoading(false));
-  }, [regId, user, secret]);
+  }, [regId, user]);
+
+  // Live periodic check & Socket.io listener to stop QR generation immediately if event is deleted
+  useEffect(() => {
+    if (!user || !regId || eventCancelled) return;
+
+    let isMounted = true;
+
+    const checkLiveStatus = async () => {
+      if (typeof window !== 'undefined' && !navigator.onLine) return; // Ignore if offline
+
+      try {
+        const data = await apiGet(`/registrations/${regId}/secret`);
+        if (!isMounted) return;
+        if (data.checkedInAt) {
+          setCheckedIn(true);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        if (err.message && (err.message.includes('404') || err.message.toLowerCase().includes('not found'))) {
+          try {
+            localStorage.removeItem(`ivent_ticket_${regId}`);
+            const listCached = localStorage.getItem('ivent_cached_my_registrations');
+            if (listCached) {
+              const list = JSON.parse(listCached).filter((r) => r.id !== regId);
+              localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(list));
+            }
+          } catch {
+            // ignore
+          }
+          setSecret(null);
+          setCurrentCode('------');
+          setQrDataUrl(null);
+          setEventCancelled(true);
+        }
+      }
+    };
+
+    const pollTimer = setInterval(checkLiveStatus, 6000);
+
+    let socket = null;
+    import('socket.io-client').then(({ io }) => {
+      if (!isMounted) return;
+      socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
+
+      socket.on('event:deleted', () => {
+        if (!isMounted) return;
+        try {
+          localStorage.removeItem(`ivent_ticket_${regId}`);
+          const listCached = localStorage.getItem('ivent_cached_my_registrations');
+          if (listCached) {
+            const list = JSON.parse(listCached).filter((r) => r.id !== regId);
+            localStorage.setItem('ivent_cached_my_registrations', JSON.stringify(list));
+          }
+        } catch {
+          // ignore
+        }
+        setSecret(null);
+        setCurrentCode('------');
+        setQrDataUrl(null);
+        setEventCancelled(true);
+      });
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollTimer);
+      if (socket) socket.disconnect();
+    };
+  }, [user, regId, eventCancelled]);
 
   // Update QR code and countdown timer every second
   const updateTicket = useCallback(async () => {
-    if (!secret) return;
+    if (!secret || eventCancelled) return;
 
     const { code, remaining } = await computeTotp(secret);
     setCountdown(remaining);
@@ -189,10 +281,10 @@ export default function MyTicketPage() {
         console.error('QR generation error:', err);
       }
     }
-  }, [secret, regId]);
+  }, [secret, regId, eventCancelled]);
 
   useEffect(() => {
-    if (!secret) return;
+    if (!secret || eventCancelled) return;
 
     updateTicket();
     intervalRef.current = setInterval(updateTicket, 1000);
@@ -202,7 +294,24 @@ export default function MyTicketPage() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [secret, updateTicket]);
+  }, [secret, eventCancelled, updateTicket]);
+
+  if (eventCancelled) {
+    return (
+      <div className="ticket-container">
+        <div className="ticket-card" style={{ borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+          <XCircleIcon size={48} color="var(--color-error)" />
+          <h1 style={{ marginTop: 'var(--space-md)' }}>Event Cancelled or Deleted</h1>
+          <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)' }}>
+            This event or registration has been removed by the organizers. Dynamic QR code generation has been stopped.
+          </p>
+          <Link href="/" className="btn btn-primary">
+            Browse Active Events
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (authLoading || (!user && !secret) || (loading && !secret)) {
     return (
