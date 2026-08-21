@@ -817,7 +817,11 @@ async function generatePdfReport(concurrencyOutput) {
 
       <div class="terminal-block">${concurrencyOutput}</div>
 
-      <div style="margin-top:14pt; padding:10px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; font-size:8pt; color:#64748b; text-align:center;">
+      <div style="margin-top:14pt; padding:12px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; border-radius:6px; font-size:8.5pt; color:#166534; line-height:1.5;">
+        <strong>Note:</strong> I could have manually made the PDF but I chose to use antigravity cause it can make a better PDF with formatting than me , which I just discovered when making the PDF for the MIC project. Hope I get selected :)
+      </div>
+
+      <div style="margin-top:10pt; padding:8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:7.5pt; color:#64748b; text-align:center;">
         Generated automatically by Ivent Verification Engine • All 27 Checklist Items &amp; 4 Hard Problems Verified
       </div>
 
