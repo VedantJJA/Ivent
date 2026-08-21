@@ -68,27 +68,12 @@ export default function LoginPage() {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <h1>Welcome to Ivent</h1>
+          <h1>{mode === 'login' ? 'Welcome to Ivent' : 'Create an Account'}</h1>
           <p>
             {mode === 'login'
               ? 'Sign in to register for events and manage check-ins'
-              : 'Create your attendee account to get started'}
+              : 'Create your account to register for events and get QR tickets'}
           </p>
-        </div>
-
-        <div className="auth-tabs">
-          <button
-            className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
-            onClick={() => { setMode('login'); setError(null); }}
-          >
-            Sign In
-          </button>
-          <button
-            className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
-            onClick={() => { setMode('register'); setError(null); }}
-          >
-            Sign Up
-          </button>
         </div>
 
         {error && (
@@ -162,25 +147,49 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="auth-footer">
+        <div className="auth-footer" style={{ textAlign: 'center', marginTop: 'var(--space-xl)', paddingTop: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
           {mode === 'login' ? (
-            <p>
+            <p style={{ margin: 0 }}>
               Don&apos;t have an account?{' '}
               <button
                 type="button"
                 className="btn-link"
                 onClick={() => { setMode('register'); setError(null); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--color-primary-400)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: '3px',
+                  fontSize: 'inherit',
+                  fontFamily: 'inherit',
+                }}
               >
                 Sign Up
               </button>
             </p>
           ) : (
-            <p>
+            <p style={{ margin: 0 }}>
               Already have an account?{' '}
               <button
                 type="button"
                 className="btn-link"
                 onClick={() => { setMode('login'); setError(null); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--color-primary-400)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: '3px',
+                  fontSize: 'inherit',
+                  fontFamily: 'inherit',
+                }}
               >
                 Sign In
               </button>
