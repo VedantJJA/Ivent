@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
   CalendarIcon, PlusIcon, LogInIcon, LogOutIcon, TicketIcon,
@@ -11,6 +12,8 @@ import { useState } from 'react';
 export default function Navbar() {
   const { user, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const isLoginPage = pathname === '/login';
 
   const isOrganizer = !user?.is_admin && user?.clubs && user.clubs.length > 0;
   const isAdmin = !!user?.is_admin;
@@ -96,12 +99,12 @@ export default function Navbar() {
                     <span>Sign Out</span>
                   </button>
                 </div>
-              ) : (
+              ) : !isLoginPage ? (
                 <Link href="/login" className="btn btn-primary btn-sm" onClick={() => setMobileOpen(false)}>
                   <LogInIcon size={18} />
                   <span>Sign In</span>
                 </Link>
-              )}
+              ) : null}
             </>
           )}
         </div>
