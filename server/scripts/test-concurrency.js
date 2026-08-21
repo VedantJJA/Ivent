@@ -112,11 +112,18 @@ async function runConcurrencyTest() {
 
   // 5. Test Check-In Concurrency on the Same Ticket
   console.log('5. Testing concurrent check-in on the same ticket...');
-  const firstReg = accepted[0].data.registration;
-  const firstAttendeeToken = attendeeTokens[0];
+  const acceptedIndex = regResults.findIndex(r => r.status === 201);
+  if (acceptedIndex === -1) {
+    console.error('No accepted registrations found for check-in test');
+    process.exit(1);
+  }
 
-  const secretRes = await req(`/registrations/${firstReg.id}/secret`, 'GET', null, firstAttendeeToken);
-  const totpCode = authenticator.generate(secretRes.data.secret);
+  const firstReg = regResults[acceptedIndex].data.registration;
+  const winningAttendeeToken = attendeeTokens[acceptedIndex];
+
+  const secretRes = await req(`/registrations/${firstReg.id}/secret`, 'GET', null, winningAttendeeToken);
+  const totpSecret = secretRes.data?.secret || firstReg.totp_secret;
+  const totpCode = authenticator.generate(totpSecret);
 
   const concurrentCheckins = 20;
   console.log(`   Sending ${concurrentCheckins} simultaneous check-in scans for ticket ${firstReg.id}...`);

@@ -48,22 +48,76 @@ function Build-Client {
     Pop-Location
 }
 
+function Test-ServerIsUp {
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:3001/" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+        return ($response.StatusCode -eq 200)
+    } catch {
+        return $false
+    }
+}
+
+function Run-WithServer {
+    param([scriptblock]$Action)
+
+    $wasRunning = Test-ServerIsUp
+    $tempJob = $null
+
+    if (-not $wasRunning) {
+        Write-Host "Backend server not detected on port 3001. Starting temporary background server..." -ForegroundColor DarkGray
+        $tempJob = Start-Job -ScriptBlock {
+            param($dir)
+            Set-Location $dir
+            node src/index.js 2>&1
+        } -ArgumentList $ServerDir
+
+        $ready = $false
+        for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (Test-ServerIsUp) {
+                $ready = $true
+                break
+            }
+        }
+
+        if (-not $ready) {
+            Write-Host "[Error] Failed to start backend server for testing." -ForegroundColor Red
+            if ($tempJob) { Receive-Job $tempJob; Remove-Job $tempJob -Force -ErrorAction SilentlyContinue }
+            return
+        }
+    }
+
+    try {
+        & $Action
+    } finally {
+        if ($tempJob) {
+            Write-Host "`nStopping temporary background server..." -ForegroundColor DarkGray
+            Stop-Job $tempJob -ErrorAction SilentlyContinue
+            Remove-Job $tempJob -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Run-Proof {
-    Write-Host "`nRunning Concurrency Load Test..." -ForegroundColor Cyan
-    Push-Location $ServerDir
-    node scripts/test-concurrency.js
-    Pop-Location
+    Run-WithServer {
+        Write-Host "`nRunning Concurrency Load Test..." -ForegroundColor Cyan
+        Push-Location $ServerDir
+        node scripts/test-concurrency.js
+        Pop-Location
+    }
 }
 
 function Run-Test {
-    Write-Host "`nRunning End-to-End API Test Suite..." -ForegroundColor Cyan
-    Push-Location $ServerDir
-    node scripts/test-api.js
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "`nRunning Concurrency & Race-Condition Suite..." -ForegroundColor Cyan
-        node scripts/test-concurrency.js
+    Run-WithServer {
+        Write-Host "`nRunning PDF Requirements & End-to-End Suite..." -ForegroundColor Cyan
+        Push-Location $ServerDir
+        node scripts/test-pdf-requirements.js
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "`nRunning Concurrency & Race-Condition Suite..." -ForegroundColor Cyan
+            node scripts/test-concurrency.js
+        }
+        Pop-Location
     }
-    Pop-Location
 }
 
 function Initialize-Database {

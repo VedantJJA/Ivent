@@ -65,7 +65,7 @@ async function checkIn({ registrationId, eventId, totpCode, stationId, clientSca
   const isValid = authenticator.check(cleanTotp, totp_secret);
   if (!isValid) {
     await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'rejected_invalid_totp');
-    return { status: 'rejected_invalid_totp' };
+    return { status: 'rejected_invalid_totp', message: 'Invalid or expired 30-second auth code' };
   }
 
   // Atomic check-in: UPDATE only if not already checked in
@@ -86,8 +86,14 @@ async function checkIn({ registrationId, eventId, totpCode, stationId, clientSca
       'SELECT checked_in_at FROM registrations WHERE id = $1',
       [actualRegistrationId]
     );
+    const checkedInAt = existing.rows[0]?.checked_in_at;
+    const timeStr = checkedInAt ? new Date(checkedInAt).toLocaleTimeString() : 'earlier';
     await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'rejected_duplicate');
-    return { status: 'rejected_duplicate', checkedInAt: existing.rows[0]?.checked_in_at };
+    return {
+      status: 'rejected_duplicate',
+      checkedInAt,
+      message: `Already checked in at ${timeStr}`,
+    };
   }
 
   await logScan(actualRegistrationId, stationId, clientScanId, deviceTimestamp, 'accepted');
@@ -100,7 +106,7 @@ async function checkIn({ registrationId, eventId, totpCode, stationId, clientSca
     });
   }
 
-  return { status: 'accepted', checkedInAt: rows[0].checked_in_at };
+  return { status: 'accepted', message: 'Check-in accepted', checkedInAt: rows[0].checked_in_at };
 }
 
 // Sync a single offline scan -- idempotent on client_scan_id
