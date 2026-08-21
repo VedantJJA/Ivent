@@ -355,6 +355,27 @@ a {
   width: 100%;
 }
 
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--color-primary-400);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline;
+  transition: color var(--transition-fast);
+}
+
+.btn-link:hover {
+  color: var(--color-primary-300);
+  text-decoration: underline;
+}
+
 /* ---- Cards ---- */
 .card {
   background: var(--color-bg-card);
@@ -636,6 +657,20 @@ a {
 
 .auth-tab:not(.active):hover {
   color: var(--color-text-primary);
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.auth-footer p {
+  margin: 0;
+  color: var(--color-text-secondary);
 }
 
 /* ---- Page Layouts ---- */
