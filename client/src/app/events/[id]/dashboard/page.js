@@ -313,7 +313,7 @@ export default function DashboardPage() {
           <div className="insights-answer">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontWeight: 600, color: 'var(--color-primary-400)', fontSize: '0.85rem' }}>
-                {insight.isFallback ? '⚡ Deterministic SQL Fallback' : '✨ Gemini Intelligence Response'}
+                {insight.isFallback ? 'Deterministic SQL Fallback' : '✨ Gemini Intelligence Response'}
               </span>
               {insight.note && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
