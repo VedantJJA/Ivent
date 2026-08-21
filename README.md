@@ -53,8 +53,8 @@ ADMIN_EMAIL=admin@example.com
 # Optional: Frontend URL for CORS (in production)
 CLIENT_URL=http://localhost:3000
 
-# Optional: AI Insights API Key
-XAI_API_KEY=
+# Optional: AI Insights API Key (Google Gemini)
+GEMINI_API_KEY=
 ```
 
 #### Frontend Configuration (`client/.env.local`)

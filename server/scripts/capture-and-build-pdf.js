@@ -684,7 +684,7 @@ async function generatePdfReport(concurrencyOutput) {
         </div>
         <div class="req-box hard">
           <div class="req-title"><span class="badge badge-purple">Hard Req 4</span> AI Insights (Context-Grounded)</div>
-          <div>Natural language queries compute verified SQL metrics (checked-in counts, no-show rates, peak arrival windows, remaining seats) first, feeding them as deterministic context to <strong>Grok-3 (xAI API)</strong> with offline heuristic fallbacks.</div>
+          <div>Natural language queries compute verified SQL metrics (checked-in counts, no-show rates, peak arrival windows, remaining seats) first, feeding them as deterministic context to <strong>Google Gemini API</strong> with offline heuristic fallbacks.</div>
         </div>
       </div>
 
@@ -773,13 +773,13 @@ async function generatePdfReport(concurrencyOutput) {
 
       <div class="screenshot-container">
         <div class="screenshot-header">
-          <span class="screenshot-title">7. AI-Powered Event Insights Panel (Grok-3 Powered)</span>
+          <span class="screenshot-title">7. AI-Powered Event Insights Panel (Gemini Powered)</span>
           <span class="badge badge-purple">Hard Req 4 Proof</span>
         </div>
         <div class="screenshot-frame">
           <img src="${img7}" alt="AI Insights Panel">
         </div>
-        <div class="screenshot-caption">Natural language query panel computing verified database statistics first and returning structured operational answers via Grok-3 (xAI API).</div>
+        <div class="screenshot-caption">Natural language query panel computing verified database statistics first and returning structured operational answers via Google Gemini API.</div>
       </div>
 
       <div class="screenshot-container">

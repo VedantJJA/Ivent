@@ -266,7 +266,7 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
           <h3 style={{ margin: 0 }}>
             <SparklesIcon size={20} color="var(--color-primary-400)" />
-            AI Insights (Grok-3 Powered)
+            AI Insights (Gemini Powered)
           </h3>
           <span className="badge badge-primary">Live Context Telemetry</span>
         </div>
@@ -313,7 +313,7 @@ export default function DashboardPage() {
           <div className="insights-answer">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontWeight: 600, color: 'var(--color-primary-400)', fontSize: '0.85rem' }}>
-                {insight.isFallback ? '⚡ Deterministic SQL Fallback' : '✨ Grok-3 Intelligence Response'}
+                {insight.isFallback ? '⚡ Deterministic SQL Fallback' : '✨ Gemini Intelligence Response'}
               </span>
               {insight.note && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>

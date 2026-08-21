@@ -128,11 +128,11 @@ Organizers need to query live event metrics in plain English (e.g. "How many spo
      - `noShowPercent = (1 - checkedIn / registered) * 100`.
      - Peak check-in 15-minute time bucket using `date_trunc` and `EXTRACT(minute FROM checked_in_at)`.
 2. **Zero-Hallucination Prompt Injection**:
-   - The backend passes the structured JSON metrics into the system prompt of the LLM (xAI Grok / OpenAI API).
+   - The backend passes the structured JSON metrics into the system prompt of the LLM (Google Gemini / OpenAI-compatible API).
    - System instruction: `"Use ONLY the JSON stats provided below. Never invent, estimate, or recompute a number that is not already in this data."`
 3. **Security & Resilience**:
-   - API keys (`XAI_API_KEY`, `OPENAI_API_KEY`) are kept strictly server-side.
-   - If the external AI service times out or has no API key configured, the endpoint returns the raw structured statistics in clean JSON (`rawStats`) with a friendly notification, preventing 500 errors or app crashes.
+   - API keys (`GEMINI_API_KEY`, `GOOGLE_API_KEY`) are kept strictly server-side.
+   - If the external AI service times out or has no API key configured, the endpoint returns deterministic SQL fallback answers and structured statistics in clean JSON (`rawStats`), preventing 500 errors or app crashes.
 
 ---
 

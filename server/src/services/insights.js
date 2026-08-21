@@ -75,54 +75,86 @@ function computeDeterministicFallback(question, stats) {
 
 async function getInsight(question, stats) {
   const fallbackAnswer = computeDeterministicFallback(question, stats);
-  const apiKey = process.env.XAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.XAI_API_KEY;
 
   if (!apiKey) {
     return {
       answer: fallbackAnswer,
       rawStats: stats,
       isFallback: true,
-      note: 'Deterministic SQL Fallback: AI API key not configured.',
+      note: 'Deterministic SQL Fallback: GEMINI_API_KEY not configured.',
     };
   }
 
   try {
-    const OpenAI = require('openai');
-    const grok = new OpenAI({
-      apiKey: apiKey,
-      baseURL: 'https://api.x.ai/v1',
-    });
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const completion = await grok.chat.completions.create(
-      {
-        model: 'grok-3',
-        messages: [
+    const prompt = `You are answering questions about a live event's check-in data. Use ONLY the JSON stats provided below. Never invent, estimate, or recompute a number that is not already in this data.\n\nStats:\n${JSON.stringify(stats, null, 2)}\n\nQuestion: ${question}`;
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
           {
-            role: 'system',
-            content:
-              'You are answering questions about a live event\'s check-in data. ' +
-              'Use ONLY the JSON stats provided below. Never invent, estimate, or ' +
-              'recompute a number that is not already in this data.\n\n' +
-              JSON.stringify(stats),
+            role: 'user',
+            parts: [{ text: prompt }],
           },
-          { role: 'user', content: question },
         ],
-      },
-      { signal: controller.signal }
-    );
+      }),
+      signal: controller.signal,
+    });
 
     clearTimeout(timeout);
-    return { answer: completion.choices[0].message.content, rawStats: stats, isFallback: false };
-  } catch (err) {
-    console.error('AI insight error:', err.message);
+
+    if (res.ok) {
+      const data = await res.json();
+      const geminiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (geminiText) {
+        return { answer: geminiText.trim(), rawStats: stats, isFallback: false };
+      }
+    }
+
+    // OpenAI compatibility fallback for Gemini
+    const OpenAI = require('openai');
+    const gemini = new OpenAI({
+      apiKey: apiKey,
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    });
+
+    const completion = await gemini.chat.completions.create({
+      model: 'gemini-1.5-flash',
+      messages: [
+        {
+          role: 'system',
+          content:
+            "You are answering questions about a live event's check-in data. " +
+            'Use ONLY the JSON stats provided below. Never invent, estimate, or ' +
+            'recompute a number that is not already in this data.\n\n' +
+            JSON.stringify(stats),
+        },
+        { role: 'user', content: question },
+      ],
+    });
+
+    if (completion.choices?.[0]?.message?.content) {
+      return { answer: completion.choices[0].message.content, rawStats: stats, isFallback: false };
+    }
+
     return {
       answer: fallbackAnswer,
       rawStats: stats,
       isFallback: true,
-      note: 'Deterministic SQL Fallback: AI request timed out or unavailable.',
+      note: 'Deterministic SQL Fallback: Gemini response empty.',
+    };
+  } catch (err) {
+    console.error('Gemini insight error:', err.message);
+    return {
+      answer: fallbackAnswer,
+      rawStats: stats,
+      isFallback: true,
+      note: 'Deterministic SQL Fallback: Gemini request timed out or unavailable.',
     };
   }
 }
