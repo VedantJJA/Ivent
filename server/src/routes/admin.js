@@ -22,9 +22,9 @@ router.get('/clubs', async (req, res) => {
        ORDER BY c.name ASC`
     );
 
-    // Get members for each club including registration number
+    // Get members for each club
     const membersResult = await db.query(
-      `SELECT cm.club_id, u.id AS user_id, u.email, u.reg_number, cm.added_at
+      `SELECT cm.club_id, u.id AS user_id, u.email, cm.added_at
        FROM club_members cm
        JOIN users u ON u.id = cm.user_id
        ORDER BY u.email ASC`
@@ -120,11 +120,11 @@ router.delete('/events/:id', async (req, res) => {
   }
 });
 
-// GET /admin/users -- list all registered users with their clubs and registration numbers
+// GET /admin/users -- list all registered users with their clubs
 router.get('/users', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT u.id, u.email, u.reg_number, u.created_at,
+      `SELECT u.id, u.email, u.created_at,
               COALESCE(
                 json_agg(
                   json_build_object('id', c.id, 'name', c.name)
@@ -134,7 +134,7 @@ router.get('/users', async (req, res) => {
        FROM users u
        LEFT JOIN club_members cm ON cm.user_id = u.id
        LEFT JOIN clubs c ON c.id = cm.club_id
-       GROUP BY u.id, u.email, u.reg_number, u.created_at
+       GROUP BY u.id, u.email, u.created_at
        ORDER BY u.created_at DESC`
     );
 
@@ -150,35 +150,35 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// POST /admin/clubs/:clubId/members -- assign an organizer to a club by email or reg_number
+// POST /admin/clubs/:clubId/members -- assign an organizer to a club by email
 router.post('/clubs/:clubId/members', async (req, res) => {
   try {
     const { clubId } = req.params;
-    const { email, userId, regNumber } = req.body;
+    const { email, userId } = req.body;
 
     let targetUserId = userId;
     let targetEmail = email;
 
-    if (!targetUserId && (targetEmail || regNumber)) {
-      const identifier = (targetEmail || regNumber).toLowerCase().trim();
-      if (isAdminEmail(identifier)) {
+    if (!targetUserId && targetEmail) {
+      const cleanEmail = targetEmail.toLowerCase().trim();
+      if (isAdminEmail(cleanEmail)) {
         return res.status(400).json({
           error: 'System administrator / developer cannot be added to a club',
         });
       }
       const userRes = await db.query(
-        'SELECT id, email, reg_number FROM users WHERE LOWER(email) = $1 OR (reg_number IS NOT NULL AND LOWER(reg_number) = $1)',
-        [identifier]
+        'SELECT id, email FROM users WHERE LOWER(email) = $1',
+        [cleanEmail]
       );
       if (userRes.rows.length === 0) {
-        return res.status(404).json({ error: 'No user found with that email or registration number' });
+        return res.status(404).json({ error: 'No user found with that email address' });
       }
       targetUserId = userRes.rows[0].id;
       targetEmail = userRes.rows[0].email;
     }
 
     if (!targetUserId) {
-      return res.status(400).json({ error: 'User email, registration number, or ID is required' });
+      return res.status(400).json({ error: 'User email or ID is required' });
     }
 
     // Check if target user is admin

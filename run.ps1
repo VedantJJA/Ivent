@@ -113,6 +113,10 @@ function Run-Test {
         Push-Location $ServerDir
         node scripts/test-pdf-requirements.js
         if ($LASTEXITCODE -eq 0) {
+            Write-Host "`nRunning API End-to-End Suite..." -ForegroundColor Cyan
+            node scripts/test-api.js
+        }
+        if ($LASTEXITCODE -eq 0) {
             Write-Host "`nRunning Concurrency & Race-Condition Suite..." -ForegroundColor Cyan
             node scripts/test-concurrency.js
         }

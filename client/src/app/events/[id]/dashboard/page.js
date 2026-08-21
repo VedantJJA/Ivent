@@ -168,8 +168,7 @@ export default function DashboardPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Email</th>
-                <th>Reg No</th>
+                <th>Attendee Email</th>
                 <th>Registered</th>
                 <th>Status</th>
                 <th>Checked In At</th>
@@ -179,8 +178,7 @@ export default function DashboardPage() {
             <tbody>
               {registrations.map((reg) => (
                 <tr key={reg.id}>
-                  <td>{reg.email}</td>
-                  <td style={{ fontFamily: 'monospace' }}>{reg.reg_number || '--'}</td>
+                  <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{reg.email}</td>
                   <td>{formatTime(reg.created_at)}</td>
                   <td>
                     {reg.checked_in_at ? (
@@ -197,7 +195,7 @@ export default function DashboardPage() {
               ))}
               {registrations.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-muted" style={{ padding: 'var(--space-xl)' }}>
+                  <td colSpan={5} className="text-center text-muted" style={{ padding: 'var(--space-xl)' }}>
                     No registrations yet
                   </td>
                 </tr>

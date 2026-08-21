@@ -86,7 +86,6 @@ export default function ScanPage() {
             .forEach(r => {
               if (r.id) checkedIn.add(r.id.toLowerCase());
               if (r.email) checkedIn.add(r.email.toLowerCase());
-              if (r.reg_number) checkedIn.add(r.reg_number.toLowerCase());
             });
           setKnownScannedIdentifiers(prev => new Set([...prev, ...checkedIn]));
         }
@@ -385,7 +384,7 @@ export default function ScanPage() {
     if (!identifier) {
       setScanResult({
         status: 'error',
-        message: 'Please enter an Email Address, Registration Number, or Ticket ID.',
+        message: 'Please enter the attendee Email Address or Ticket ID.',
       });
       return;
     }
@@ -642,7 +641,7 @@ export default function ScanPage() {
           style={{ flex: 1, background: scanMethod === 'manual' ? 'var(--color-primary-600)' : 'transparent', color: scanMethod === 'manual' ? '#fff' : 'var(--color-text-secondary)' }}
           onClick={() => { setScanMethod('manual'); stopScanning(); }}
         >
-          <KeyIcon size={14} /> Manual Entry (Email / Reg No)
+          <KeyIcon size={14} /> Manual Entry (Email)
         </button>
       </div>
 
@@ -707,15 +706,15 @@ export default function ScanPage() {
         <form onSubmit={handleManualSubmit} className="card" style={{ padding: 'var(--space-lg)' }}>
           <h3 style={{ marginBottom: 'var(--space-xs)' }}>Manual Check-In</h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>
-            Enter the attendee Email Address or Registration Number and their rotating 6-digit Auth Code
+            Enter the attendee Email Address and their rotating 6-digit Auth Code
           </p>
 
           <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-            <label className="form-label">Attendee Email or Registration Number / ID</label>
+            <label className="form-label">Attendee Email Address</label>
             <input
-              type="text"
+              type="email"
               className="form-input"
-              placeholder="e.g. attendee@example.com or 21BCE1001"
+              placeholder="e.g. attendee@example.com"
               value={manualIdentifier}
               onChange={(e) => setManualIdentifier(e.target.value)}
               autoFocus

@@ -45,7 +45,6 @@ export default function MyRegistrationsPage() {
                   ticketMeta: {
                     eventName: reg.event_name,
                     email: reg.email || user?.email,
-                    regNumber: reg.reg_number || user?.reg_number,
                   }
                 }));
               }

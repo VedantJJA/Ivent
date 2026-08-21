@@ -37,7 +37,7 @@ async function checkIn({ registrationId, eventId, totpCode, stationId, clientSca
     );
   }
 
-  // If not found by registration UUID, look up by attendee email OR attendee reg_number
+  // If not found by registration UUID, look up by attendee email
   if (!reg || !reg.rows[0]) {
     const params = eventId ? [cleanIdentifier.toLowerCase(), eventId] : [cleanIdentifier.toLowerCase()];
     const eventFilter = eventId ? 'AND r.event_id = $2' : '';
@@ -46,7 +46,7 @@ async function checkIn({ registrationId, eventId, totpCode, stationId, clientSca
       `SELECT r.id, r.totp_secret, r.checked_in_at, r.event_id
        FROM registrations r
        JOIN users u ON u.id = r.user_id
-       WHERE (LOWER(u.email) = $1 OR (u.reg_number IS NOT NULL AND LOWER(u.reg_number) = $1))
+       WHERE LOWER(u.email) = $1
        ${eventFilter}
        ORDER BY r.created_at DESC
        LIMIT 1`,

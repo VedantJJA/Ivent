@@ -1,17 +1,13 @@
 -- Ivent Event Check-In System Schema
 
--- Users table with is_admin flag and registration number.
+-- Users table with is_admin flag.
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  reg_number TEXT,
   is_admin BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- Ensure reg_number column exists if upgrading from older schema
-ALTER TABLE users ADD COLUMN IF NOT EXISTS reg_number TEXT;
 
 -- Clubs table (clubs created via SQL queries or admin panel).
 CREATE TABLE IF NOT EXISTS clubs (
@@ -95,8 +91,6 @@ CREATE TABLE IF NOT EXISTS station_bundles (
 
 -- Database Performance and Look-up Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
-CREATE INDEX IF NOT EXISTS idx_users_reg_number ON users(LOWER(reg_number)) WHERE reg_number IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_reg_number_unique ON users(LOWER(reg_number)) WHERE reg_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_club_members_user_id ON club_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_club_members_club_id ON club_members(club_id);
 CREATE INDEX IF NOT EXISTS idx_events_club_id ON events(club_id);

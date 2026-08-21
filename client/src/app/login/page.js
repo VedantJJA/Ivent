@@ -8,7 +8,6 @@ import { LogInIcon, LoaderIcon } from '@/components/Icons';
 export default function LoginPage() {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
-  const [regNumber, setRegNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState(null);
@@ -53,9 +52,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (mode === 'login') {
-        await login(email, password);
+        await login(email.trim().toLowerCase(), password);
       } else {
-        await register(email, password, regNumber.trim() || null);
+        await register(email.trim().toLowerCase(), password);
       }
       router.push('/');
     } catch (err) {
@@ -99,36 +98,19 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label" htmlFor="email">
-              {mode === 'login' ? 'Email Address or Registration Number *' : 'Email Address *'}
+              Email Address *
             </label>
             <input
               id="email"
-              type="text"
+              type="email"
               className="form-input"
-              placeholder={mode === 'login' ? 'you@example.com or 21BCE1001' : 'you@example.com'}
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
+              autoComplete="email"
               required
             />
           </div>
-
-          {mode === 'register' && (
-            <div className="form-group">
-              <label className="form-label" htmlFor="regNumber">
-                Registration Number / Student ID
-              </label>
-              <input
-                id="regNumber"
-                type="text"
-                className="form-input"
-                placeholder="e.g. 21BCE1001 or ID number"
-                value={regNumber}
-                onChange={(e) => setRegNumber(e.target.value)}
-                autoComplete="off"
-              />
-            </div>
-          )}
 
           <div className="form-group">
             <label className="form-label" htmlFor="password">Password *</label>
@@ -151,7 +133,7 @@ export default function LoginPage() {
                 id="confirmPassword"
                 type="password"
                 className="form-input"
-                placeholder="Re-enter your password"
+                placeholder="Re-enter password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
@@ -164,12 +146,12 @@ export default function LoginPage() {
             type="submit"
             className="btn btn-primary btn-full btn-lg"
             disabled={loading}
-            style={{ marginTop: 'var(--space-sm)' }}
+            style={{ marginTop: 'var(--space-md)' }}
           >
             {loading ? (
               <>
                 <LoaderIcon size={18} />
-                {mode === 'login' ? 'Signing in...' : 'Creating account...'}
+                {mode === 'login' ? 'Signing In...' : 'Creating Account...'}
               </>
             ) : (
               <>
@@ -179,6 +161,32 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        <div className="auth-footer">
+          {mode === 'login' ? (
+            <p>
+              Don&apos;t have an account?{' '}
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => { setMode('register'); setError(null); }}
+              >
+                Sign Up
+              </button>
+            </p>
+          ) : (
+            <p>
+              Already have an account?{' '}
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => { setMode('login'); setError(null); }}
+              >
+                Sign In
+              </button>
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

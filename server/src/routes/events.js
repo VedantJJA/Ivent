@@ -291,7 +291,7 @@ router.get('/:id/dashboard', requireAuth, requireOrganizer, async (req, res) => 
 
     const registrations = await db.query(
       `SELECT r.id, r.checked_in_at, r.checked_in_by, r.checked_in_source, r.created_at,
-              u.email, u.reg_number
+              u.email
        FROM registrations r
        JOIN users u ON r.user_id = u.id
        WHERE r.event_id = $1
@@ -324,7 +324,7 @@ router.get('/:id/dashboard', requireAuth, requireOrganizer, async (req, res) => 
 router.get('/:id/export.csv', requireAuth, requireOrganizer, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT u.email, u.reg_number, r.created_at as registered_at, r.checked_in_at,
+      `SELECT u.email, r.created_at as registered_at, r.checked_in_at,
               r.checked_in_by, r.checked_in_source
        FROM registrations r
        JOIN users u ON r.user_id = u.id
@@ -334,11 +334,11 @@ router.get('/:id/export.csv', requireAuth, requireOrganizer, async (req, res) =>
     );
 
     if (result.rows.length === 0) {
-      return res.status(200).send('email,reg_number,registered_at,checked_in_at,checked_in_by,checked_in_source\n');
+      return res.status(200).send('email,registered_at,checked_in_at,checked_in_by,checked_in_source\n');
     }
 
     const { Parser } = require('json2csv');
-    const fields = ['email', 'reg_number', 'registered_at', 'checked_in_at', 'checked_in_by', 'checked_in_source'];
+    const fields = ['email', 'registered_at', 'checked_in_at', 'checked_in_by', 'checked_in_source'];
     const parser = new Parser({ fields });
     const csv = parser.parse(result.rows);
 

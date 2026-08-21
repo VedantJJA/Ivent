@@ -87,7 +87,6 @@ async function runPdfTests() {
   const orgUserRes = await req('/auth/register', 'POST', {
     email: orgEmail,
     password: 'password123',
-    regNumber: `ORG-${uniqueId}`,
   });
   const orgToken = orgUserRes.data?.token;
   const orgUserId = orgUserRes.data?.user?.id;
@@ -113,7 +112,6 @@ async function runPdfTests() {
   const attendee1Res = await req('/auth/register', 'POST', {
     email: attendeeEmail1,
     password: 'password123',
-    regNumber: `ATT1-${uniqueId}`,
   });
   const attendee1Token = attendee1Res.data?.token;
 
@@ -121,7 +119,6 @@ async function runPdfTests() {
   const attendee2Res = await req('/auth/register', 'POST', {
     email: attendeeEmail2,
     password: 'password123',
-    regNumber: `ATT2-${uniqueId}`,
   });
   const attendee2Token = attendee2Res.data?.token;
 

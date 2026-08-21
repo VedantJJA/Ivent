@@ -71,9 +71,8 @@ async function runConcurrencyTest() {
   for (let i = 0; i < totalAttendees; i++) {
     createPromises.push(
       req('/auth/register', 'POST', {
-        email: `racer-${uniqueId}-${i}@test.local`,
+        email: `runner-${uniqueId}-${i}@test.local`,
         password: 'password123',
-        regNumber: `RACER-${uniqueId}-${i}`,
       })
     );
   }

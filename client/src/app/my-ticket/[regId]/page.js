@@ -121,7 +121,6 @@ export default function MyTicketPage() {
             const meta = {
               eventName: found.event_name,
               email: found.email || user.email,
-              regNumber: found.reg_number || user.reg_number,
             };
             setTicketMeta(meta);
             hasCachedSecret = true;
@@ -144,7 +143,6 @@ export default function MyTicketPage() {
           const meta = {
             eventName: data.eventName,
             email: data.email,
-            regNumber: data.regNumber,
           };
           setTicketMeta(meta);
           try {
@@ -242,7 +240,7 @@ export default function MyTicketPage() {
     return `${code.slice(0, 3)} ${code.slice(3)}`;
   };
 
-  const regNumToDisplay = ticketMeta?.regNumber || user?.reg_number;
+  const attendeeEmail = ticketMeta?.email || user?.email;
 
   return (
     <div className="ticket-container">
@@ -251,11 +249,11 @@ export default function MyTicketPage() {
         <h1>{ticketMeta?.eventName || 'Your Event Ticket'}</h1>
         <p>Show this QR code at the venue entrance for check-in</p>
 
-        {/* Registration Number / Attendee Badge */}
-        {regNumToDisplay && (
+        {/* Attendee Email Badge */}
+        {attendeeEmail && (
           <div style={{ margin: 'var(--space-xs) 0 var(--space-sm)' }}>
             <span className="badge badge-primary" style={{ fontSize: '0.85rem', padding: '4px 12px' }}>
-              Reg No: {regNumToDisplay}
+              {attendeeEmail}
             </span>
           </div>
         )}
@@ -293,10 +291,6 @@ export default function MyTicketPage() {
               transition: 'width 1s linear',
             }}
           />
-        </div>
-
-        <div style={{ marginTop: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
-          Ticket ID: {regId}
         </div>
       </div>
     </div>

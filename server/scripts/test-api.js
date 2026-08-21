@@ -1,5 +1,5 @@
 // Direct End-to-End API Test Script for Ivent
-// Tests all authentication, roles, registration numbers, club management,
+// Tests all authentication, roles, club management,
 // event creation, ticket generation, TOTP verification, and offline sync.
 
 const path = require('path');
@@ -58,26 +58,24 @@ async function runTests() {
   const health = await req('/');
   assert(health.status === 200, `Health check status: ${health.status}`);
 
-  // 2. Attendee Registration with Registration Number
-  console.log('\nTest 2: Attendee Registration with Registration Number');
-  const regNumber = `REG-${uniqueId}`;
+  // 2. Attendee Registration via Email
+  console.log('\nTest 2: Attendee Registration with Email');
   const attendeeEmail = `attendee-${uniqueId}@test.local`;
   const regRes = await req('/auth/register', 'POST', {
     email: attendeeEmail,
     password: 'password123',
-    regNumber: regNumber,
   });
   assert(regRes.status === 201, `Registration status 201 (got ${regRes.status})`);
-  assert(regRes.data.user?.reg_number === regNumber, `User has registration number ${regNumber}`);
+  assert(regRes.data.user?.email === attendeeEmail, `User registered with email ${attendeeEmail}`);
   const attendeeToken = regRes.data.token;
 
-  // 3. Login using Registration Number
-  console.log('\nTest 3: Login using Registration Number');
+  // 3. Login using Email
+  console.log('\nTest 3: Login using Email');
   const loginRes = await req('/auth/login', 'POST', {
-    email: regNumber, // Using regNumber instead of email in login field
+    email: attendeeEmail,
     password: 'password123',
   });
-  assert(loginRes.status === 200, `Login with registration number succeeded (got ${loginRes.status})`);
+  assert(loginRes.status === 200, `Login with email succeeded (got ${loginRes.status})`);
   assert(loginRes.data.user?.email === attendeeEmail, `Correct user logged in (${attendeeEmail})`);
 
   // 4. Admin Auth
@@ -100,7 +98,7 @@ async function runTests() {
   const clubId = clubRes.data?.club?.id;
 
   // 6. Create Organizer User and Link to Club
-  console.log('\nTest 6: Assign Organizer to Club');
+  console.log('\nTest 6: Assign Organizer to Club by Email');
   const orgEmail = `organizer-${uniqueId}@test.local`;
   const orgUserRes = await req('/auth/register', 'POST', {
     email: orgEmail,
@@ -110,9 +108,9 @@ async function runTests() {
   const orgUserId = orgUserRes.data.user.id;
 
   const linkRes = await req(`/admin/clubs/${clubId}/members`, 'POST', {
-    userId: orgUserId,
+    email: orgEmail,
   }, adminToken);
-  assert(linkRes.status === 201 || linkRes.status === 200, `Organizer linked to club (got ${linkRes.status})`);
+  assert(linkRes.status === 201 || linkRes.status === 200, `Organizer linked to club via email (got ${linkRes.status})`);
 
   // 7. Organizer Creates Event
   console.log('\nTest 7: Organizer Creates Event');
@@ -149,21 +147,21 @@ async function runTests() {
   const currentTotp = authenticator.generate(totpSecret);
   assert(/^\d{6}$/.test(currentTotp), `Generated 6-digit TOTP code: ${currentTotp}`);
 
-  // 11. Check-In Verification (Online)
-  console.log('\nTest 11: Online Check-In Verification');
+  // 11. Check-In Verification (Online) via Email
+  console.log('\nTest 11: Online Check-In Verification via Email');
   const checkinRes = await req(`/events/${eventId}/checkin`, 'POST', {
-    registrationId: registrationId,
+    registrationId: attendeeEmail, // Check-in directly by Email
     totpCode: currentTotp,
     stationId: 'gate-1',
     clientScanId: uuidv4(),
     deviceTimestamp: new Date().toISOString(),
   }, orgToken);
-  assert(checkinRes.status === 200 && checkinRes.data?.status === 'accepted', `Check-in accepted (got ${checkinRes.data?.status})`);
+  assert(checkinRes.status === 200 && checkinRes.data?.status === 'accepted', `Check-in via email accepted (got ${checkinRes.data?.status})`);
 
   // 12. Duplicate Check-In Prevention
   console.log('\nTest 12: Duplicate Check-In Rejection');
   const dupCheckinRes = await req(`/events/${eventId}/checkin`, 'POST', {
-    registrationId: registrationId,
+    registrationId: attendeeEmail,
     totpCode: currentTotp,
     stationId: 'gate-2',
     clientScanId: uuidv4(),
@@ -174,7 +172,7 @@ async function runTests() {
   // 13. Invalid TOTP Code Rejection
   console.log('\nTest 13: Invalid TOTP Rejection');
   const invalidCheckinRes = await req(`/events/${eventId}/checkin`, 'POST', {
-    registrationId: registrationId,
+    registrationId: attendeeEmail,
     totpCode: '000000',
     stationId: 'gate-1',
     clientScanId: uuidv4(),
@@ -187,7 +185,7 @@ async function runTests() {
   const batchRes = await req(`/events/${eventId}/checkin/sync-batch`, 'POST', {
     scans: [
       {
-        registrationId: registrationId,
+        registrationId: attendeeEmail,
         totpCode: currentTotp,
         stationId: 'offline-station-1',
         clientScanId: uuidv4(),

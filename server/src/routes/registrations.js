@@ -48,7 +48,7 @@ router.post('/events/:id/register', requireAuth, async (req, res) => {
 router.get('/registrations/:id/secret', requireAuth, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT r.totp_secret, r.user_id, r.checked_in_at, e.name as event_name, u.email, u.reg_number
+      `SELECT r.totp_secret, r.user_id, r.checked_in_at, e.name as event_name, u.email
        FROM registrations r
        JOIN events e ON r.event_id = e.id
        JOIN users u ON r.user_id = u.id
@@ -69,7 +69,6 @@ router.get('/registrations/:id/secret', requireAuth, async (req, res) => {
       checkedInAt: registration.checked_in_at,
       eventName: registration.event_name,
       email: registration.email,
-      regNumber: registration.reg_number,
     });
   } catch (err) {
     console.error('Get secret error:', err);
@@ -83,7 +82,7 @@ router.get('/registrations/my', requireAuth, async (req, res) => {
     const result = await db.query(
       `SELECT r.id, r.event_id, r.totp_secret, r.checked_in_at, r.created_at,
               e.name as event_name, e.event_date, e.capacity, e.registered_count,
-              u.email, u.reg_number
+              u.email
        FROM registrations r
        JOIN events e ON r.event_id = e.id
        JOIN users u ON r.user_id = u.id

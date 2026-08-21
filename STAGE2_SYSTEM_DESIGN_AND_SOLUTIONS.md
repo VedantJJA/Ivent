@@ -12,7 +12,7 @@ This document outlines the technical architecture, design decisions, database co
 | **Hard Req 2: Prevent QR Sharing / Screenshot Abuse** | Static QR screenshots shared across messaging apps | Cryptographic RFC 6238 Time-Based One-Time Passwords (TOTP) with dynamic 30s rotating QR codes generated client-side via WebCrypto | `client/src/app/my-ticket/[regId]/page.js`<br>`server/src/services/checkin.js` |
 | **Hard Req 3: Offline-First Scanning** | Intermittent wifi at venue gates; multi-station check-in conflicts | PWA Service Worker caching, IndexedDB local outbox queue, local duplicate checks, and idempotent server batch sync | `client/public/sw.js`<br>`client/src/app/events/[id]/scan/page.js`<br>`server/src/services/checkin.js` |
 | **Hard Req 4: AI-Powered Event Insights** | Organizers querying live stats in natural language without AI hallucinations | Pre-aggregated SQL metrics passed as strict system prompt context to LLM; fallback raw stats returned on failure | `server/src/services/insights.js`<br>`server/src/routes/events.js`<br>`client/src/app/events/[id]/dashboard/page.js` |
-| **Core 1-3: Event & Attendee Lifecycle** | Event creation, attendee registration, registration number tracking | Club-linked event creation, unique registration index on `reg_number`, unique Base32 TOTP secret per attendee | `server/src/routes/events.js`<br>`server/src/routes/auth.js`<br>`server/src/schema.sql` |
+| **Core 1-3: Event & Attendee Lifecycle** | Event creation, attendee registration, email-only user identity | Club-linked event creation, unique user email index, unique Base32 TOTP secret per registration | `server/src/routes/events.js`<br>`server/src/routes/auth.js`<br>`server/src/schema.sql` |
 | **Core 4-5: Scanning & Live Telemetry** | Scan to check in, real-time organizer dashboard without manual refresh | HTML5-QRCode camera scanner, WebSocket (`socket.io`) check-in broadcasting | `client/src/app/events/[id]/scan/page.js`<br>`client/src/app/events/[id]/dashboard/page.js`<br>`server/src/index.js` |
 | **Core 6: Role Enforcement** | Strict separation of Admin Developer, Club Organizers, and Attendees | Server-side JWT role validation middleware, preventing organizers from registering for hosted events | `server/src/middleware/auth.js`<br>`server/src/routes/registrations.js`<br>`client/src/app/admin/page.js` |
 | **Core 7: Exportable CSV Data** | Organizers downloading complete attendee list with check-in timestamps | Streaming `json2csv` exporter endpoint with custom filename header | `server/src/routes/events.js` |
@@ -68,7 +68,7 @@ Static QR codes can be screenshotted and shared via WhatsApp/Telegram to allow u
 
 #### The Architecture & Code Solution:
 We implemented **RFC 6238 Time-Based One-Time Passwords (TOTP)** directly inside the QR code payload:
-- **Payload Format**: `REG_<registration_id>.<6-digit-totp-code>` (e.g. `REG_e7b23...98f.491028`).
+- **Payload Format**: `REG_<registration_id>.<6-digit-totp-code>` (e.g. `REG_e7b23...98f.491028`) or check-in via Attendee Email + 6-digit TOTP code.
 - **Client-Side Generation (`client/src/app/my-ticket/[regId]/page.js`)**:
   - The attendee device receives a unique cryptographic Base32 TOTP secret upon registration.
   - Native browser `crypto.subtle` computes the HMAC-SHA1 digest of the current Unix epoch divided by 30-second time steps.
@@ -141,17 +141,16 @@ Organizers need to query live event metrics in plain English (e.g. "How many spo
 ### 1. Role-Based Access Control
 - **System Developer / Admin**:
   - Configured via `ADMIN_EMAIL` environment variable.
-  - Accesses `/admin` to create clubs, delete clubs, link organizers, view all users, and manage system events.
+  - Accesses `/admin` to create clubs, delete clubs, link organizers by email, view all users, and manage system events.
   - Blocked from joining or participating in events.
 - **Club Organizers**:
-  - Assigned by the Admin for specific clubs.
+  - Assigned by the Admin for specific clubs via Email.
   - Create and manage club events on `/my-clubs`.
   - Access live telemetry on `/events/[id]/dashboard` and live camera scanners on `/events/[id]/scan`.
   - Blocked from registering as attendees for their own hosted events.
 - **Attendees**:
   - Browse upcoming events on `/` without logging in.
-  - Sign up with Email, Password, and Registration Number / Student ID (`reg_number`).
-  - Log in using either Email Address or Registration Number.
+  - Sign up and log in using **Email and Password only**.
   - View dynamic rotating tickets on `/my-registrations` and `/my-ticket/[regId]`.
 
 ### 2. Live Telemetry via WebSockets
@@ -160,7 +159,7 @@ Organizers need to query live event metrics in plain English (e.g. "How many spo
 
 ### 3. Attendee CSV Export
 - Organizers can download full rosters via `GET /events/:id/export.csv`.
-- Exports attendee emails, registration numbers, registration timestamps, check-in timestamps, check-in stations, and source (online vs offline sync).
+- Exports attendee emails, registration timestamps, check-in timestamps, check-in stations, and source (online vs offline sync).
 
 ---
 
