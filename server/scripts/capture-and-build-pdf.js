@@ -305,34 +305,37 @@ async function captureScreenshots(data) {
   await new Promise((r) => setTimeout(r, 1200));
   await page.screenshot({ path: path.join(screenshotsDir, '04-scanner-accepted.png'), fullPage: false });
 
-  // 5. Rejected Duplicate Scan
-  console.log('Capturing: 05-scanner-duplicate-rejected.png');
-  // Wait 3.5s for the 3-second scanner cooldown gap to fully clear
-  await new Promise((r) => setTimeout(r, 3500));
+  // 5. Rejected Duplicate Scan (Preserve user-provided screenshot if present)
+  console.log('Using/Capturing: 05-scanner-duplicate-rejected.png');
+  const screenshot5Path = path.join(screenshotsDir, '05-scanner-duplicate-rejected.png');
+  if (!fs.existsSync(screenshot5Path) || process.env.FORCE_RECAPTURE === 'true') {
+    // Wait 3.5s for the 3-second scanner cooldown gap to fully clear
+    await new Promise((r) => setTimeout(r, 3500));
 
-  // Attempt second scan on attendee 2 (triggering atomic duplicate rejection)
-  await page.evaluate(
-    ({ email, code }) => {
-      const emailInput = document.querySelector('input[type="email"]') || document.querySelectorAll('input')[0];
-      const codeInput = document.querySelector('input[pattern="[0-9]*"]') || document.querySelectorAll('input')[1];
-      if (emailInput) {
-        emailInput.value = email;
-        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      if (codeInput) {
-        codeInput.value = code;
-        codeInput.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      const submitBtn = document.querySelector('form button[type="submit"]');
-      if (submitBtn) submitBtn.click();
-    },
-    { email: data.att2.user.email, code: validTotp2 }
-  );
+    // Attempt second scan on attendee 2 (triggering atomic duplicate rejection)
+    await page.evaluate(
+      ({ email, code }) => {
+        const emailInput = document.querySelector('input[type="email"]') || document.querySelectorAll('input')[0];
+        const codeInput = document.querySelector('input[pattern="[0-9]*"]') || document.querySelectorAll('input')[1];
+        if (emailInput) {
+          emailInput.value = email;
+          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (codeInput) {
+          codeInput.value = code;
+          codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const submitBtn = document.querySelector('form button[type="submit"]');
+        if (submitBtn) submitBtn.click();
+      },
+      { email: data.att2.user.email, code: validTotp2 }
+    );
 
-  // Wait for the rejection banner to appear on screen
-  await page.waitForSelector('.scanner-result.result-rejected, .scanner-result', { timeout: 6000 }).catch(() => {});
-  await new Promise((r) => setTimeout(r, 800));
-  await page.screenshot({ path: path.join(screenshotsDir, '05-scanner-duplicate-rejected.png'), fullPage: false });
+    // Wait for the rejection banner to appear on screen
+    await page.waitForSelector('.scanner-result.result-rejected, .scanner-result', { timeout: 6000 }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 800));
+    await page.screenshot({ path: screenshot5Path, fullPage: false });
+  }
 
   // 6. Live Organizer Dashboard
   console.log('Capturing: 06-live-dashboard.png');
@@ -878,6 +881,12 @@ async function generatePdfReport(concurrencyOutput) {
 }
 
 async function main() {
+  if (process.env.PDF_ONLY === 'true') {
+    console.log('Compiling PDF from existing screenshots...');
+    await generatePdfReport();
+    console.log('=== PDF Re-generation Complete! ===');
+    process.exit(0);
+  }
   const data = await prepareScenario();
   const concurrencyLog = await runConcurrencyProof();
   await captureScreenshots(data);
